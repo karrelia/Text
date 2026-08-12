@@ -1,0 +1,35 @@
+name = "voice2text-ua"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+
+# Сховище персональних налаштувань. id підставиться командою
+#   npx wrangler kv namespace create SETTINGS
+[[kv_namespaces]]
+binding = "SETTINGS"
+id = "ЗАМІНИТИ_НА_ID_З_КОМАНДИ_WRANGLER"
+
+[vars]
+# Кому дозволено користуватись ботом: Telegram ID через кому.
+# Порожньо — бот нікого не пускає і показує ID у відповідь.
+ALLOWED_USER_IDS = ""
+
+# Рушій розпізнавання за замовчуванням: groq | openai
+STT_PROVIDER = "groq"
+GROQ_WHISPER_MODEL = "whisper-large-v3"
+OPENAI_WHISPER_MODEL = "whisper-1"
+
+# Модель редагування тексту (через OpenRouter)
+LLM_MODEL = "google/gemini-2.5-flash"
+LLM_TEMPERATURE = "0.2"
+
+# Максимальна тривалість запису, секунд (0 = без ліміту)
+MAX_AUDIO_SECONDS = "5400"
+
+OPENROUTER_APP_URL = "https://github.com/karrelia/Text"
+OPENROUTER_APP_TITLE = "Voice2Text UA Bot"
+
+# Секрети задаються окремо, у код і git не потрапляють:
+#   npx wrangler secret put TELEGRAM_BOT_TOKEN
+#   npx wrangler secret put OPENROUTER_API_KEY
+#   npx wrangler secret put GROQ_API_KEY
+#   npx wrangler secret put WEBHOOK_SECRET

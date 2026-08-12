@@ -10,3 +10,8 @@ data/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Локальні секрети для wrangler dev
+worker/.dev.vars
+worker/node_modules/
+worker/.wrangler/

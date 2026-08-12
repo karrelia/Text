@@ -1,0 +1,69 @@
+/**
+ * Інлайн-клавіатури.
+ *
+ * У Workers немає спільної пам'яті між запитами, тож callback_data несе
+ * значення напряму. Ліміт Telegram — 64 байти, довші варіанти просто не
+ * показуємо кнопкою (їх можна задати точним ідентифікатором у команді).
+ */
+
+import { type Env, PROVIDER_TITLES, STT_PROVIDERS, apiKeyFor } from "./env";
+import { STYLES } from "./prompts";
+import type { InlineKeyboard } from "./telegram";
+
+export const CALLBACK_LIMIT = 64;
+
+export const PREFIX = {
+  model: "m:",
+  style: "s:",
+  provider: "p:",
+} as const;
+
+export const PRESET_LLM_MODELS = [
+  "google/gemini-2.5-flash",
+  "google/gemini-2.5-pro",
+  "anthropic/claude-sonnet-4.5",
+  "anthropic/claude-haiku-4.5",
+  "openai/gpt-5-mini",
+  "openai/gpt-5",
+  "meta-llama/llama-3.3-70b-instruct",
+  "qwen/qwen3-235b-a22b",
+];
+
+function fits(data: string): boolean {
+  return new TextEncoder().encode(data).length <= CALLBACK_LIMIT;
+}
+
+export function modelsKeyboard(models: string[], current: string): InlineKeyboard {
+  const rows = models
+    .map((id) => ({ id, data: PREFIX.model + id }))
+    .filter((item) => fits(item.data))
+    .map((item) => [
+      { text: `${item.id === current ? "✅ " : ""}${item.id}`, callback_data: item.data },
+    ]);
+  return { inline_keyboard: rows };
+}
+
+export function providersKeyboard(env: Env, current: string): InlineKeyboard {
+  return {
+    inline_keyboard: STT_PROVIDERS.map((provider) => [
+      {
+        text:
+          (provider === current ? "✅ " : "") +
+          PROVIDER_TITLES[provider] +
+          (apiKeyFor(env, provider) ? "" : " 🔒"),
+        callback_data: PREFIX.provider + provider,
+      },
+    ]),
+  };
+}
+
+export function stylesKeyboard(current: string): InlineKeyboard {
+  return {
+    inline_keyboard: Object.entries(STYLES).map(([key, style]) => [
+      {
+        text: `${key === current ? "✅ " : ""}${style.title}`,
+        callback_data: PREFIX.style + key,
+      },
+    ]),
+  };
+}
