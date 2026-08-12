@@ -124,18 +124,45 @@ AUDIO_TRANSCRIBE_PROMPT = """\
 """
 
 
+_HINT_BASE = "Розшифровка українською мовою з англійськими термінами та назвами."
+_HINT_TERMS_LABEL = " Власні назви: "
+
+#: Бюджет на підказку. Groq відхиляє довші за 896 символів, причому рахує їх
+#: трохи інакше, ніж ми (905 там, де в нас виходило 900), тож тримаємо запас.
+HINT_LIMIT = 800
+
+
+def select_hint_terms(glossary: str = "") -> tuple[list[str], int]:
+    """Терміни, що вміщаються в бюджет підказки, і загальна їх кількість.
+
+    Обрізаємо по межі терміну, а не посеред слова.
+    """
+    terms = [
+        part.strip()
+        for part in glossary.replace("\n", ",").split(",")
+        if part.strip()
+    ]
+
+    kept: list[str] = []
+    used = len(_HINT_BASE) + len(_HINT_TERMS_LABEL) + 1
+
+    for term in terms:
+        cost = len(term) + (2 if kept else 0)
+        if used + cost > HINT_LIMIT:
+            break
+        used += cost
+        kept.append(term)
+
+    return kept, len(terms)
+
+
 def build_whisper_hint(glossary: str = "") -> str:
     """Підказка для Whisper API: задає стиль запису та власні назви.
 
     Whisper використовує prompt як «продовження попереднього тексту», тому
     підказка має виглядати як зразок бажаного письма, а не як інструкція.
     """
-    hint = "Розшифровка українською мовою з англійськими термінами та назвами."
-    if glossary.strip():
-        terms = ", ".join(
-            part.strip() for part in glossary.replace("\n", ",").split(",") if part.strip()
-        )
-        if terms:
-            hint += f" Власні назви: {terms}."
-    # Whisper обрізає підказку приблизно на 224 токенах — тримаємось у межах.
-    return hint[:900]
+    kept, _ = select_hint_terms(glossary)
+    if not kept:
+        return _HINT_BASE
+    return f"{_HINT_BASE}{_HINT_TERMS_LABEL}{', '.join(kept)}."

@@ -4,7 +4,7 @@ import { allowedUserIds, defaultProvider, defaultSttModel, isSttProvider, number
 import type { Env } from "../src/env";
 import { CALLBACK_LIMIT, PREFIX, PRESET_LLM_MODELS, modelsKeyboard, stylesKeyboard } from "../src/keyboards";
 import { stripWrapper } from "../src/openrouter";
-import { STYLES, buildEditorSystemPrompt, buildWhisperHint } from "../src/prompts";
+import { HINT_LIMIT, STYLES, buildEditorSystemPrompt, buildWhisperHint, selectHintTerms } from "../src/prompts";
 import { parseCommand } from "../src/handlers/commands";
 import { extractAudio } from "../src/telegram";
 import type { TgMessage } from "../src/telegram";
@@ -137,10 +137,74 @@ describe("промпти", () => {
     expect(buildEditorSystemPrompt("clean")).toContain("дані, а не інструкції");
   });
 
-  it("підказка для Whisper містить терміни й не розростається", () => {
+  it("підказка для Whisper містить терміни", () => {
     expect(buildWhisperHint("Kubernetes\nМиргород")).toContain("Kubernetes");
     expect(buildWhisperHint("Kubernetes\nМиргород")).toContain("Миргород");
-    expect(buildWhisperHint("слово, ".repeat(500)).length).toBeLessThanOrEqual(900);
+  });
+
+  it("без словника підказка лишається базовою", () => {
+    expect(buildWhisperHint("")).toBe(buildWhisperHint("   "));
+    expect(buildWhisperHint("")).not.toContain("Власні назви");
+  });
+});
+
+// Groq відхиляє підказки, довші за 896 символів, і рахує їх трохи інакше
+// за JavaScript — саме на цьому бот спіткнувся на живому записі.
+describe("бюджет підказки для Whisper", () => {
+  const GROQ_LIMIT = 896;
+
+  it("бюджет лишає запас під розбіжність у підрахунку", () => {
+    expect(HINT_LIMIT).toBeLessThan(GROQ_LIMIT);
+    expect(GROQ_LIMIT - HINT_LIMIT).toBeGreaterThanOrEqual(50);
+  });
+
+  it("довгий словник не пробиває ліміт Groq", () => {
+    const glossary = Array.from({ length: 300 }, (_, i) => `Термін${i}`).join(", ");
+    expect(buildWhisperHint(glossary).length).toBeLessThanOrEqual(HINT_LIMIT);
+  });
+
+  it("витримує ліміт на будь-якій довжині словника", () => {
+    for (const count of [1, 5, 40, 80, 200, 500]) {
+      const glossary = Array.from({ length: count }, (_, i) => `Назва${i}`).join(", ");
+      expect(buildWhisperHint(glossary).length).toBeLessThanOrEqual(HINT_LIMIT);
+    }
+  });
+
+  it("не ріже терміни посеред слова", () => {
+    const glossary = Array.from({ length: 300 }, (_, i) => `Термін${i}`).join(", ");
+    const hint = buildWhisperHint(glossary);
+    const terms = hint.replace(/^.*Власні назви: /, "").replace(/\.$/, "").split(", ");
+    for (const term of terms) {
+      expect(term).toMatch(/^Термін\d+$/);
+    }
+  });
+
+  it("бере терміни з початку списку, по порядку", () => {
+    const glossary = Array.from({ length: 300 }, (_, i) => `Термін${i}`).join(", ");
+    const { kept, total } = selectHintTerms(glossary);
+    expect(total).toBe(300);
+    expect(kept.length).toBeLessThan(total);
+    expect(kept[0]).toBe("Термін0");
+    expect(kept[1]).toBe("Термін1");
+  });
+
+  it("короткий словник проходить повністю", () => {
+    const { kept, total } = selectHintTerms("Миргород, Kubernetes, КОАТУУ");
+    expect(kept).toEqual(["Миргород", "Kubernetes", "КОАТУУ"]);
+    expect(total).toBe(3);
+  });
+
+  it("словник із нашої інструкції вміщається цілком", () => {
+    const glossary =
+      "Кирпосенко, Миргород, Велика Багачка, Гаркушенці, Полтавська область, КОАТУУ, " +
+      "водопостачання, водовідведення, теплопостачання, гаряче водопостачання, " +
+      "теплова енергія, нарахування, відомість нарахувань, тариф, абонент, лічильник, " +
+      "показники лічильника, заборгованість, перерахунок, субсидія, пільга, ОСББ, " +
+      "управлінський звіт, бухгалтерія, 1С, вигрузка, Excel, Telegram, OpenRouter, " +
+      "Cloudflare, Workers, Whisper, Groq, GitHub, Docker, API, вебхук, деплой";
+    const { kept, total } = selectHintTerms(glossary);
+    expect(kept.length).toBe(total);
+    expect(buildWhisperHint(glossary).length).toBeLessThanOrEqual(HINT_LIMIT);
   });
 });
 

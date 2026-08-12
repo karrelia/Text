@@ -3,7 +3,7 @@
 import { type Env, PROVIDER_TITLES } from "../env";
 import { PRESET_LLM_MODELS, modelsKeyboard, providersKeyboard, stylesKeyboard } from "../keyboards";
 import { modelExists, searchModels } from "../openrouter";
-import { STYLES } from "../prompts";
+import { STYLES, selectHintTerms } from "../prompts";
 import { loadSettings, resetSettings, updateSettings } from "../settings";
 import type { TelegramClient, TgMessage } from "../telegram";
 import * as texts from "../texts";
@@ -173,9 +173,19 @@ async function handleTextSetting(
   }
 
   await updateSettings(env, userId, { [field]: value });
+
+  let note = "";
+  if (field === "glossary") {
+    const { kept, total } = selectHintTerms(value);
+    note =
+      kept.length < total
+        ? "\n\n" + texts.GLOSSARY_TRUNCATED(kept.length, total)
+        : "\n\n" + texts.GLOSSARY_FULL(total);
+  }
+
   await tg.sendMessage(
     chatId,
-    `${texts.SETTINGS_SAVED}\n\n<code>${texts.escapeHtml(value)}</code>`,
+    `${texts.SETTINGS_SAVED}\n\n<code>${texts.escapeHtml(value)}</code>${note}`,
     { html: true },
   );
 }

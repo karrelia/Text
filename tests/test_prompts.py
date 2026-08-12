@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
-from bot.prompts import STYLES, build_editor_system_prompt, build_whisper_hint
+import re
+
+import pytest
+
+from bot.prompts import (
+    HINT_LIMIT,
+    STYLES,
+    build_editor_system_prompt,
+    build_whisper_hint,
+    select_hint_terms,
+)
 
 
 def test_every_style_has_title_and_hint() -> None:
@@ -52,5 +62,42 @@ def test_whisper_hint_includes_terms() -> None:
     assert "Миргород" in hint
 
 
-def test_whisper_hint_is_bounded() -> None:
-    assert len(build_whisper_hint("слово, " * 500)) <= 900
+def test_whisper_hint_without_glossary_is_base_only() -> None:
+    assert "Власні назви" not in build_whisper_hint("   ")
+
+
+# Groq відхиляє підказки, довші за 896 символів, і рахує їх трохи інакше,
+# ніж ми — саме на цьому бот спіткнувся на живому записі.
+GROQ_LIMIT = 896
+
+
+def test_hint_budget_leaves_headroom() -> None:
+    assert HINT_LIMIT < GROQ_LIMIT
+    assert GROQ_LIMIT - HINT_LIMIT >= 50
+
+
+@pytest.mark.parametrize("count", [1, 5, 40, 80, 200, 500])
+def test_whisper_hint_never_exceeds_budget(count: int) -> None:
+    glossary = ", ".join(f"Назва{index}" for index in range(count))
+    assert len(build_whisper_hint(glossary)) <= HINT_LIMIT
+
+
+def test_hint_cuts_on_term_boundary() -> None:
+    glossary = ", ".join(f"Термін{index}" for index in range(300))
+    hint = build_whisper_hint(glossary)
+    terms = hint.split("Власні назви: ")[1].rstrip(".").split(", ")
+    assert all(re.fullmatch(r"Термін\d+", term) for term in terms)
+
+
+def test_hint_keeps_terms_in_order() -> None:
+    glossary = ", ".join(f"Термін{index}" for index in range(300))
+    kept, total = select_hint_terms(glossary)
+    assert total == 300
+    assert len(kept) < total
+    assert kept[:2] == ["Термін0", "Термін1"]
+
+
+def test_short_glossary_passes_whole() -> None:
+    kept, total = select_hint_terms("Миргород, Kubernetes, КОАТУУ")
+    assert kept == ["Миргород", "Kubernetes", "КОАТУУ"]
+    assert total == 3

@@ -82,6 +82,16 @@ export const PROMPT_HELP = (current: string) =>
   "Очистити: <code>/prompt -</code>\n\n" +
   `Зараз: ${current}`;
 
+export const GLOSSARY_FULL = (total: number) =>
+  `📖 Термінів: ${total}. Усі використовуються і в розпізнаванні, і в редагуванні.`;
+
+export const GLOSSARY_TRUNCATED = (kept: number, total: number) =>
+  `⚠️ Термінів: ${total}, але в <b>розпізнавання</b> вміщаються лише перші ${kept} — ` +
+  "рушій обмежує довжину підказки.\n" +
+  `Решта ${total - kept} впливають лише на <b>редагування</b> тексту. ` +
+  "Щоб усі працювали на розпізнавання, перенесіть найважливіші назви на початок " +
+  "або скоротіть список.";
+
 export const MODEL_HELP = (current: string) =>
   "<b>Модель обробки тексту</b>\n\n" +
   "Обери зі списку нижче або знайди будь-яку модель OpenRouter:\n" +

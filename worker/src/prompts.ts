@@ -95,18 +95,47 @@ export function buildEditorSystemPrompt(
   return prompt;
 }
 
+const HINT_BASE = "Розшифровка українською мовою з англійськими термінами та назвами.";
+const HINT_TERMS_LABEL = " Власні назви: ";
+
+/**
+ * Бюджет на підказку. Groq відхиляє довші за 896 символів, причому рахує
+ * їх трохи інакше за JavaScript (бачили 905 там, де в нас було 900), тож
+ * тримаємо відчутний запас.
+ */
+export const HINT_LIMIT = 800;
+
+/**
+ * Відбирає стільки термінів, скільки вміщається в бюджет, не розриваючи
+ * слова. Повертає ще й загальну кількість — щоб бот міг сказати
+ * користувачу, що частина словника не дійшла до розпізнавання.
+ */
+export function selectHintTerms(glossary = ""): { kept: string[]; total: number } {
+  const terms = glossary
+    .split(/[\n,]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const kept: string[] = [];
+  // Базовий текст, мітка й підсумкова крапка вже займають місце.
+  let used = HINT_BASE.length + HINT_TERMS_LABEL.length + 1;
+
+  for (const term of terms) {
+    const cost = term.length + (kept.length > 0 ? 2 : 0);
+    if (used + cost > HINT_LIMIT) break;
+    used += cost;
+    kept.push(term);
+  }
+
+  return { kept, total: terms.length };
+}
+
 /**
  * Підказка для Whisper. Він трактує prompt як «продовження попереднього
  * тексту», тому це зразок бажаного письма, а не інструкція.
  */
 export function buildWhisperHint(glossary = ""): string {
-  let hint = "Розшифровка українською мовою з англійськими термінами та назвами.";
-  const terms = glossary
-    .split(/[\n,]+/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .join(", ");
-  if (terms) hint += ` Власні назви: ${terms}.`;
-  // Whisper обрізає підказку приблизно на 224 токенах — тримаємось у межах.
-  return hint.slice(0, 900);
+  const { kept } = selectHintTerms(glossary);
+  if (kept.length === 0) return HINT_BASE;
+  return `${HINT_BASE}${HINT_TERMS_LABEL}${kept.join(", ")}.`;
 }
