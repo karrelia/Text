@@ -6,6 +6,7 @@ import { CALLBACK_LIMIT, PREFIX, PRESET_LLM_MODELS, modelsKeyboard, stylesKeyboa
 import { stripWrapper } from "../src/openrouter";
 import {
   HINT_LIMIT,
+  buildPhotoSystemPrompt,
   STYLES,
   buildSystemPrompt,
   buildUserMessage,
@@ -436,5 +437,57 @@ describe("режими генерації промтів", () => {
     const prompt = buildSystemPrompt("video", "Миргород", "пиши українською");
     expect(prompt).toContain("Миргород");
     expect(prompt).toContain("пиши українською");
+  });
+});
+
+// Перший живий знімок (акт про пломбування водомірів) виявив три вади:
+// частокіл порожніх комірок, рукописна помітка всередині таблиці й слово,
+// розірване переносом.
+describe("читання документів із фото", () => {
+  it("бланк із порожніми полями подається вертикально, а не сіткою", () => {
+    const prompt = buildPhotoSystemPrompt();
+    expect(prompt).toContain("це НЕ таблиця");
+    expect(prompt).toContain("Назва поля: значення");
+  });
+
+  it("порожні комірки заборонені", () => {
+    const prompt = buildPhotoSystemPrompt();
+    expect(prompt).toContain("Порожні поля не виводь узагалі");
+    expect(prompt).toContain("рядків із самих роздільників");
+  });
+
+  it("роздільник дозволено лише для щільних таблиць", () => {
+    const prompt = buildPhotoSystemPrompt();
+    expect(prompt).toContain("Якщо сумніваєшся — вертикально");
+  });
+
+  it("рукописне виноситься окремо від таблиці", () => {
+    const prompt = buildPhotoSystemPrompt();
+    expect(prompt).toContain("Дописано від руки");
+    expect(prompt).toContain("навіть якщо напис проходить поверх них");
+  });
+
+  it("перенесені слова склеюються", () => {
+    expect(buildPhotoSystemPrompt()).toContain("централізованого");
+  });
+
+  it("числа читаються посимвольно", () => {
+    expect(buildPhotoSystemPrompt()).toContain("символ за символом");
+  });
+
+  it("нерозбірливе не додумується", () => {
+    const prompt = buildPhotoSystemPrompt();
+    expect(prompt).toContain("[нерозбірливо]");
+    expect(prompt).toContain("не додумуй за автора");
+  });
+
+  it("словник і підпис під фото додаються", () => {
+    const prompt = buildPhotoSystemPrompt("Миргород", "лише показники");
+    expect(prompt).toContain("Миргород");
+    expect(prompt).toContain("лише показники");
+  });
+
+  it("без словника й підпису нічого зайвого не додається", () => {
+    expect(buildPhotoSystemPrompt("  ", "  ")).toBe(buildPhotoSystemPrompt());
   });
 });
