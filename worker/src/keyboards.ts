@@ -14,8 +14,10 @@ export const CALLBACK_LIMIT = 64;
 
 export const PREFIX = {
   model: "m:",
+  vision: "v:",
   style: "s:",
   provider: "p:",
+  reminderDelete: "rd:",
 } as const;
 
 export const PRESET_LLM_MODELS = [
@@ -33,9 +35,20 @@ function fits(data: string): boolean {
   return new TextEncoder().encode(data).length <= CALLBACK_LIMIT;
 }
 
-export function modelsKeyboard(models: string[], current: string): InlineKeyboard {
+export const PRESET_VISION_MODELS = [
+  "google/gemini-2.5-flash",
+  "google/gemini-2.5-pro",
+  "anthropic/claude-sonnet-4.5",
+  "openai/gpt-5-mini",
+];
+
+export function modelsKeyboard(
+  models: string[],
+  current: string,
+  prefix: string = PREFIX.model,
+): InlineKeyboard {
   const rows = models
-    .map((id) => ({ id, data: PREFIX.model + id }))
+    .map((id) => ({ id, data: prefix + id }))
     .filter((item) => fits(item.data))
     .map((item) => [
       { text: `${item.id === current ? "✅ " : ""}${item.id}`, callback_data: item.data },

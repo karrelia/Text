@@ -23,11 +23,17 @@ export const START =
 export const HELP =
   "<b>Як користуватись</b>\n" +
   "Просто надішли голосове, аудіофайл (mp3, m4a, ogg, wav…) або відеокружечок.\n\n" +
+  "<b>Фото.</b> Надішли знімок документа, накладної чи показників — зчитаю з " +
+  "нього текст. Підпис під фото стає вказівкою: напиши «лише показники» або " +
+  "«зроби таблицю», і я так і зроблю.\n\n" +
   "<b>Команди</b>\n" +
   "/settings — поточні налаштування\n" +
   "/model — модель для обробки тексту\n" +
   "/style — режим обробки: розшифровка або генерація промтів\n" +
   "/stt — рушій розпізнавання мови\n" +
+  "/vision — модель для читання фото\n" +
+  "/remind — створити нагадування\n" +
+  "/reminders — список нагадувань\n" +
   "/glossary — імена й терміни, які треба писати правильно\n" +
   "/prompt — додаткові побажання до обробки\n" +
   "/reset — скинути все до типових значень\n\n" +
@@ -52,7 +58,9 @@ export const NOT_AUDIO =
 export const STATUS_TRANSCRIBING = "🎧 Розпізнаю мовлення…";
 export const STATUS_CLEANING = "✨ Причісую текст…";
 export const STATUS_GENERATING = "🎨 Складаю промт…";
+export const STATUS_READING_PHOTO = "🔍 Читаю знімок…";
 export const EMPTY_RESULT = "🤷 У записі не вдалося розібрати жодного слова.";
+export const EMPTY_PHOTO = "🤷 На знімку не вдалося нічого розібрати.";
 
 export const ERROR_TOO_LONG = (duration: number, limit: number) =>
   `⏱ Запис задовгий: ${duration} хв, а ліміт — ${limit} хв. ` +
@@ -112,6 +120,46 @@ export const MODEL_UNKNOWN = (model: string) =>
   `⚠️ Моделі <code>${escapeHtml(model)}</code> немає в каталозі OpenRouter. ` +
   "Перевір ідентифікатор на openrouter.ai/models";
 
+export const VISION_HELP = (current: string) =>
+  "<b>Модель для читання фото</b>\n\n" +
+  "Показані лише моделі, що приймають зображення.\n" +
+  "Пошук: <code>/vision gemini</code>\n" +
+  "Точний ідентифікатор: <code>/vision google/gemini-2.5-pro</code>\n\n" +
+  `Зараз: <code>${escapeHtml(current)}</code>`;
+
+export const MODEL_NOT_VISION = (model: string) =>
+  `⚠️ Модель <code>${escapeHtml(model)}</code> не приймає зображення. ` +
+  "Обери іншу зі списку /vision.";
+
+// ── Нагадування ──────────────────────────────────────────────────────────────
+
+export const REMIND_HELP =
+  "<b>Нагадування</b>\n\n" +
+  "Скажи звичайними словами, коли й про що нагадати:\n" +
+  "<code>/remind у вівторок о 9 здати звіт</code>\n" +
+  "<code>/remind через дві години передзвонити Кириленку</code>\n\n" +
+  "Надиктував голосове — відповідай на мою розшифровку командою " +
+  "<code>/remind</code> без тексту, візьму текст із неї.\n\n" +
+  "Список: /reminders";
+
+export const REMIND_SAVED = (what: string, when: string) =>
+  `⏰ Нагадаю <b>${escapeHtml(when)}</b>\n${escapeHtml(what)}`;
+
+export const REMIND_FAILED = (reason: string) =>
+  `🤔 ${escapeHtml(reason)}`;
+
+export const REMIND_LIMIT = (max: number) =>
+  `📌 Уже назбиралось ${max} нагадувань. Прибери зайві через /reminders.`;
+
+export const REMINDERS_EMPTY = "📭 Нагадувань немає. Створити — /remind";
+
+export const REMINDERS_HEADER = (count: number) =>
+  `<b>Найближчі нагадування (${count})</b>\n\nНатисни, щоб прибрати:`;
+
+export const REMINDER_DELETED = "🗑 Прибрано.";
+
+export const REMINDER_FIRES = (text: string) => `⏰ <b>Нагадування</b>\n\n${escapeHtml(text)}`;
+
 export const STT_PICK = (current: string) =>
   `<b>Рушій розпізнавання мови</b>\n\nЗараз: ${escapeHtml(current)}`;
 
@@ -134,6 +182,7 @@ export function renderSettings(user: UserSettings): string {
     `🎧 Розпізнавання: ${PROVIDER_TITLES[user.sttProvider]}`,
     `   модель: <code>${escapeHtml(user.sttModel)}</code>`,
     `🧠 Обробка тексту: <code>${escapeHtml(user.llmModel)}</code>`,
+    `📷 Читання фото: <code>${escapeHtml(user.visionModel)}</code>`,
     `🎛 Режим: ${style.title} — ${style.hint}`,
     `📖 Словник: ${preview(user.glossary)}`,
     `➕ Побажання: ${preview(user.extraPrompt)}`,

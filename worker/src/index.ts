@@ -10,9 +10,15 @@
 import { type Env, allowedUserIds } from "./env";
 import { handleCallback } from "./handlers/callbacks";
 import { COMMANDS, handleCommand, parseCommand } from "./handlers/commands";
-import { handleAudioMessage } from "./pipeline";
+import { handleAudioMessage, handlePhotoMessage } from "./pipeline";
+import { deleteReminder, dueReminders } from "./reminders";
 import { seenUpdate } from "./settings";
-import { TelegramClient, type TgUpdate, extractAudio } from "./telegram";
+import {
+  TelegramClient,
+  type TgUpdate,
+  extractAudio,
+  extractPhoto,
+} from "./telegram";
 import * as texts from "./texts";
 
 export default {
@@ -53,7 +59,36 @@ export default {
 
     return new Response("ok");
   },
+
+  /** Cron: раз на хвилину розсилає нагадування, час яких настав. */
+  async scheduled(_event: ScheduledController, env: Env): Promise<void> {
+    await sendDueReminders(env);
+  },
 } satisfies ExportedHandler<Env>;
+
+export async function sendDueReminders(env: Env): Promise<number> {
+  const due = await dueReminders(env, Date.now());
+  if (due.length === 0) return 0;
+
+  const tg = new TelegramClient(env.TELEGRAM_BOT_TOKEN);
+  let sent = 0;
+
+  for (const reminder of due) {
+    try {
+      await tg.sendMessage(reminder.chatId, texts.REMINDER_FIRES(reminder.text), {
+        html: true,
+      });
+      sent += 1;
+    } catch (error) {
+      // Не змогли надіслати — лишаємо запис, спробуємо за хвилину.
+      console.error("Не вдалося надіслати нагадування", reminder.key, error);
+      continue;
+    }
+    await deleteReminder(env, reminder.key);
+  }
+
+  return sent;
+}
 
 async function handleUpdate(env: Env, update: TgUpdate): Promise<void> {
   if (await seenUpdate(env, update.update_id)) return;
@@ -92,6 +127,11 @@ async function handleUpdate(env: Env, update: TgUpdate): Promise<void> {
 
   if (extractAudio(message)) {
     await handleAudioMessage(env, tg, message, userId);
+    return;
+  }
+
+  if (extractPhoto(message)) {
+    await handlePhotoMessage(env, tg, message, userId);
     return;
   }
 

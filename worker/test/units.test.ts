@@ -15,7 +15,7 @@ import {
   temperatureFor,
 } from "../src/prompts";
 import { parseCommand } from "../src/handlers/commands";
-import { extractAudio } from "../src/telegram";
+import { extractAudio, extractPhoto } from "../src/telegram";
 import type { TgMessage } from "../src/telegram";
 import { escapeHtml, splitForTelegram } from "../src/texts";
 
@@ -109,6 +109,46 @@ describe("вибір аудіо з повідомлення", () => {
 
   it("ігнорує текст", () => {
     expect(extractAudio({ ...base, text: "привіт" } as TgMessage)).toBeNull();
+  });
+});
+
+describe("вибір фото з повідомлення", () => {
+  const base = { message_id: 1, chat: { id: 1 } };
+
+  it("бере найбільший варіант знімка", () => {
+    const message = {
+      ...base,
+      photo: [
+        { file_id: "small", width: 90, height: 60 },
+        { file_id: "big", width: 1280, height: 960 },
+        { file_id: "mid", width: 320, height: 240 },
+      ],
+    } as TgMessage;
+    expect(extractPhoto(message)?.file_id).toBe("big");
+  });
+
+  it("бере зображення, надіслане файлом", () => {
+    const message = {
+      ...base,
+      document: { file_id: "a", mime_type: "image/png", file_name: "scan.png" },
+    } as TgMessage;
+    expect(extractPhoto(message)?.file_name).toBe("scan.png");
+  });
+
+  it("не плутає аудіо та фото", () => {
+    const voice = { ...base, voice: { file_id: "a", duration: 5 } } as TgMessage;
+    const photo = { ...base, photo: [{ file_id: "a", width: 100, height: 100 }] } as TgMessage;
+    expect(extractPhoto(voice)).toBeNull();
+    expect(extractAudio(photo)).toBeNull();
+  });
+
+  it("ігнорує документи інших типів", () => {
+    const pdf = { ...base, document: { file_id: "a", mime_type: "application/pdf" } } as TgMessage;
+    expect(extractPhoto(pdf)).toBeNull();
+  });
+
+  it("порожній список фото не вважається знімком", () => {
+    expect(extractPhoto({ ...base, photo: [] } as TgMessage)).toBeNull();
   });
 });
 

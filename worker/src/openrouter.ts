@@ -9,6 +9,7 @@ export class OpenRouterError extends Error {}
 export interface ModelInfo {
   id: string;
   name: string;
+  modalities: readonly string[];
 }
 
 const BASE_URL = "https://openrouter.ai/api/v1";
@@ -29,7 +30,7 @@ interface Completion {
   error?: { message?: string };
 }
 
-async function complete(
+export async function complete(
   env: Env,
   model: string,
   messages: unknown[],
@@ -171,10 +172,18 @@ export async function listModels(env: Env): Promise<ModelInfo[]> {
     const response = await fetch(`${BASE_URL}/models`, { headers: headers(env) });
     if (!response.ok) return catalogCache?.models ?? [];
 
-    const payload = (await response.json()) as { data?: { id?: string; name?: string }[] };
+    const payload = (await response.json()) as {
+      data?: { id?: string; name?: string; architecture?: { input_modalities?: string[] } }[];
+    };
     const models = (payload.data ?? [])
-      .filter((item): item is { id: string; name?: string } => Boolean(item.id))
-      .map((item) => ({ id: item.id, name: item.name ?? item.id }))
+      .filter((item): item is { id: string } => Boolean(item.id))
+      .map((item) => ({
+        id: item.id,
+        name: (item as { name?: string }).name ?? item.id,
+        modalities:
+          (item as { architecture?: { input_modalities?: string[] } }).architecture
+            ?.input_modalities ?? [],
+      }))
       .sort((a, b) => a.id.localeCompare(b.id));
 
     catalogCache = { models, at: Date.now() };
@@ -184,8 +193,16 @@ export async function listModels(env: Env): Promise<ModelInfo[]> {
   }
 }
 
-export async function searchModels(env: Env, query: string, limit = 12): Promise<ModelInfo[]> {
-  const models = await listModels(env);
+export async function searchModels(
+  env: Env,
+  query: string,
+  options: { imageOnly?: boolean; limit?: number } = {},
+): Promise<ModelInfo[]> {
+  const limit = options.limit ?? 12;
+  let models = await listModels(env);
+  if (options.imageOnly) {
+    models = models.filter((model) => model.modalities.includes("image"));
+  }
   const needle = query.trim().toLowerCase();
   if (!needle) return models.slice(0, limit);
 

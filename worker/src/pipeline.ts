@@ -1,4 +1,4 @@
-/** Головний сценарій: голосове повідомлення → чистий текст. */
+/** Головні сценарії: голосове → чистий текст, фото → зчитаний текст. */
 
 import { type Env, numberVar } from "./env";
 import { OpenRouterError, processTranscript } from "./openrouter";
@@ -12,8 +12,10 @@ import {
   TelegramError,
   type TgMessage,
   extractAudio,
+  extractPhoto,
 } from "./telegram";
 import * as texts from "./texts";
+import { readPhoto } from "./vision";
 
 export async function handleAudioMessage(
   env: Env,
@@ -102,4 +104,51 @@ function describe(error: unknown): string {
   }
   console.error("Несподівана помилка обробки запису", error);
   return texts.ERROR_GENERIC(String(error));
+}
+
+/** Фото → текст. Підпис під знімком стає окремою вказівкою моделі. */
+export async function handlePhotoMessage(
+  env: Env,
+  tg: TelegramClient,
+  message: TgMessage,
+  userId: number,
+): Promise<void> {
+  const chatId = message.chat.id;
+  const photo = extractPhoto(message);
+  if (!photo) return;
+
+  if (photo.file_size && photo.file_size > DOWNLOAD_LIMIT) {
+    await tg.sendMessage(chatId, texts.ERROR_TOO_BIG);
+    return;
+  }
+
+  const status = await tg.sendMessage(chatId, texts.STATUS_READING_PHOTO);
+  await tg.sendChatAction(chatId).catch(() => undefined);
+
+  let text: string;
+  try {
+    const user = await loadSettings(env, userId);
+    const file = await tg.downloadFile(photo.file_id);
+    text = await readPhoto(
+      env,
+      file.body,
+      photo.mime_type || "image/jpeg",
+      user,
+      message.caption ?? "",
+    );
+  } catch (error) {
+    await tg.editMessage(chatId, status.message_id, describe(error), { html: true });
+    return;
+  }
+
+  const parts = texts.splitForTelegram(text, MESSAGE_LIMIT);
+  if (parts.length === 0) {
+    await tg.editMessage(chatId, status.message_id, texts.EMPTY_PHOTO);
+    return;
+  }
+
+  await tg.editMessage(chatId, status.message_id, parts[0]!);
+  for (const part of parts.slice(1)) {
+    await tg.sendMessage(chatId, part);
+  }
 }

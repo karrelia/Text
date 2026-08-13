@@ -16,6 +16,8 @@ export interface Env {
   GROQ_WHISPER_MODEL?: string;
   OPENAI_WHISPER_MODEL?: string;
   LLM_MODEL?: string;
+  VISION_MODEL?: string;
+  TIMEZONE?: string;
   LLM_TEMPERATURE?: string;
   MAX_AUDIO_SECONDS?: string;
   OPENROUTER_APP_URL?: string;

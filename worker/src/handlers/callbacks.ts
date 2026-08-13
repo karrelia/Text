@@ -2,6 +2,7 @@
 
 import { type Env, PROVIDER_TITLES, apiKeyFor, defaultSttModel, isSttProvider } from "../env";
 import { PREFIX } from "../keyboards";
+import { deleteReminder, keyFromTail } from "../reminders";
 import { STYLES } from "../prompts";
 import { loadSettings, updateSettings } from "../settings";
 import type { TelegramClient, TgCallbackQuery } from "../telegram";
@@ -28,6 +29,25 @@ export async function handleCallback(
     await updateSettings(env, userId, { llmModel: model });
     await tg.answerCallback(query.id, "Збережено");
     await edit(`${texts.SETTINGS_SAVED} Модель: <code>${texts.escapeHtml(model)}</code>`);
+    return;
+  }
+
+  if (data.startsWith(PREFIX.vision)) {
+    const model = data.slice(PREFIX.vision.length);
+    await updateSettings(env, userId, { visionModel: model });
+    await tg.answerCallback(query.id, "Збережено");
+    await edit(
+      `${texts.SETTINGS_SAVED} Модель для фото: <code>${texts.escapeHtml(model)}</code>`,
+    );
+    return;
+  }
+
+  if (data.startsWith(PREFIX.reminderDelete)) {
+    const tail = data.slice(PREFIX.reminderDelete.length);
+    // Ключ складаємо з id того, хто натиснув — чуже нагадування прибрати не вийде.
+    await deleteReminder(env, keyFromTail(userId, tail));
+    await tg.answerCallback(query.id, "Прибрано");
+    await edit(texts.REMINDER_DELETED);
     return;
   }
 

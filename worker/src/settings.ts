@@ -11,6 +11,7 @@ import { DEFAULT_STYLE, STYLES } from "./prompts";
 
 export interface UserSettings {
   llmModel: string;
+  visionModel: string;
   sttProvider: SttProvider;
   sttModel: string;
   style: string;
@@ -25,6 +26,7 @@ export function defaultsFor(env: Env): UserSettings {
   const provider = defaultProvider(env);
   return {
     llmModel: env.LLM_MODEL || "google/gemini-2.5-flash",
+    visionModel: env.VISION_MODEL || "google/gemini-2.5-flash",
     sttProvider: provider,
     sttModel: defaultSttModel(env, provider),
     style: DEFAULT_STYLE,
@@ -42,6 +44,7 @@ function sanitize(stored: StoredSettings, defaults: UserSettings): UserSettings 
 
   return {
     llmModel: stored.llmModel || defaults.llmModel,
+    visionModel: stored.visionModel || defaults.visionModel,
     sttProvider: provider,
     sttModel: stored.sttModel || defaults.sttModel,
     style,

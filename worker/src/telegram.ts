@@ -13,15 +13,25 @@ export interface TgFileMeta {
   file_size?: number;
 }
 
+export interface TgPhotoSize {
+  file_id: string;
+  file_size?: number;
+  width: number;
+  height: number;
+}
+
 export interface TgMessage {
   message_id: number;
   chat: { id: number };
   from?: TgUser;
   text?: string;
+  caption?: string;
   voice?: TgFileMeta;
   audio?: TgFileMeta;
   video_note?: TgFileMeta;
   document?: TgFileMeta;
+  photo?: TgPhotoSize[];
+  reply_to_message?: TgMessage;
 }
 
 export interface TgCallbackQuery {
@@ -154,6 +164,27 @@ export class TelegramClient {
   }
 }
 
+/** Фото стиснене Telegram — беремо найбільший варіант. Ним і читаємо текст. */
+export function extractPhoto(message: TgMessage): TgFileMeta | null {
+  if (message.photo?.length) {
+    const largest = message.photo.reduce((best, size) =>
+      size.width * size.height > best.width * best.height ? size : best,
+    );
+    return {
+      file_id: largest.file_id,
+      file_size: largest.file_size,
+      mime_type: "image/jpeg",
+      file_name: "photo.jpg",
+    };
+  }
+
+  if (message.document?.mime_type?.startsWith("image/")) {
+    return { ...message.document, file_name: message.document.file_name || "image.jpg" };
+  }
+
+  return null;
+}
+
 /** Дістає аудіо з повідомлення будь-якого підтримуваного типу. */
 export function extractAudio(message: TgMessage): TgFileMeta | null {
   if (message.voice) return { ...message.voice, file_name: "audio.ogg" };
@@ -161,8 +192,9 @@ export function extractAudio(message: TgMessage): TgFileMeta | null {
   if (message.audio) {
     return { ...message.audio, file_name: message.audio.file_name || "audio.mp3" };
   }
-  if (message.document?.mime_type?.startsWith("audio/")) {
-    return { ...message.document, file_name: message.document.file_name || "audio.ogg" };
+  const document = message.document;
+  if (document?.mime_type?.startsWith("audio/")) {
+    return { ...document, file_name: document.file_name || "audio.ogg" };
   }
   return null;
 }
