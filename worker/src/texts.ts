@@ -138,12 +138,14 @@ export const REMIND_HELP =
   "Скажи звичайними словами, коли й про що нагадати:\n" +
   "<code>/remind у вівторок о 9 здати звіт</code>\n" +
   "<code>/remind через дві години передзвонити Кириленку</code>\n\n" +
-  "Надиктував голосове — відповідай на мою розшифровку командою " +
-  "<code>/remind</code> без тексту, візьму текст із неї.\n\n" +
+  "Надиктував голосове — просто надішли <code>/remind</code> без тексту, " +
+  "візьму щойно розшифроване. Або відповідай командою на конкретне " +
+  "повідомлення, якщо треба взяти саме його.\n\n" +
   "Список: /reminders";
 
-export const REMIND_SAVED = (what: string, when: string) =>
-  `⏰ Нагадаю <b>${escapeHtml(when)}</b>\n${escapeHtml(what)}`;
+export const REMIND_SAVED = (what: string, when: string, fromLast = false) =>
+  `⏰ Нагадаю <b>${escapeHtml(when)}</b>\n${escapeHtml(what)}` +
+  (fromLast ? "\n\n<i>взято з останньої розшифровки</i>" : "");
 
 export const REMIND_FAILED = (reason: string) =>
   `🤔 ${escapeHtml(reason)}`;

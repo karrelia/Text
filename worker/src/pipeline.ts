@@ -3,7 +3,7 @@
 import { type Env, numberVar } from "./env";
 import { OpenRouterError, processTranscript } from "./openrouter";
 import { buildWhisperHint, styleKind } from "./prompts";
-import { loadSettings } from "./settings";
+import { loadSettings, saveLastTranscript } from "./settings";
 import { TranscriptionError, transcribe } from "./stt";
 import {
   DOWNLOAD_LIMIT,
@@ -74,6 +74,14 @@ export async function handleAudioMessage(
       await tg.editMessage(chatId, status.message_id, waiting);
     }
     cleaned = await processTranscript(env, transcript, user);
+
+    // Для генеративних режимів вивід — це промт, а не сказане, тож для
+    // нагадувань запам'ятовуємо саме мовлення.
+    await saveLastTranscript(
+      env,
+      userId,
+      styleKind(user.style) === "generate" ? transcript : cleaned,
+    );
   } catch (error) {
     await tg.editMessage(chatId, status.message_id, describe(error), { html: true });
     return;

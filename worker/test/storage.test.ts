@@ -8,7 +8,15 @@ import {
   listReminders,
   saveReminder,
 } from "../src/reminders";
-import { defaultsFor, loadSettings, seenUpdate, updateSettings } from "../src/settings";
+import {
+  defaultsFor,
+  loadLastTranscript,
+  loadSettings,
+  saveLastTranscript,
+  seenUpdate,
+  updateSettings,
+} from "../src/settings";
+import { pickReminderSource } from "../src/handlers/commands";
 
 /** Мінімальний KV у пам'яті: досить для put/get/list/delete з префіксом. */
 class FakeKV {
@@ -170,5 +178,70 @@ describe("налаштування у сховищі", () => {
     expect(await seenUpdate(env, 900)).toBe(false);
     expect(await seenUpdate(env, 900)).toBe(true);
     expect(await seenUpdate(env, 901)).toBe(false);
+  });
+});
+
+// Користувач надсилає /remind окремим повідомленням, а не відповіддю —
+// саме на цьому перша версія й не спрацювала.
+describe("звідки береться текст нагадування", () => {
+  it("явний аргумент має найвищий пріоритет", () => {
+    expect(pickReminderSource("завтра о 9 звіт", "з відповіді", "з історії")).toEqual({
+      source: "завтра о 9 звіт",
+      fromHistory: false,
+    });
+  });
+
+  it("без аргументу береться те, на що відповіли", () => {
+    expect(pickReminderSource("", "з відповіді", "з історії")).toEqual({
+      source: "з відповіді",
+      fromHistory: false,
+    });
+  });
+
+  it("без аргументу й відповіді береться остання розшифровка", () => {
+    expect(pickReminderSource("", "", "26 серпня о 8:30 виконком")).toEqual({
+      source: "26 серпня о 8:30 виконком",
+      fromHistory: true,
+    });
+  });
+
+  it("коли брати нічого — джерела немає", () => {
+    expect(pickReminderSource("", "", "")).toEqual({ source: "", fromHistory: false });
+  });
+
+  it("порожні рядки не вважаються джерелом", () => {
+    expect(pickReminderSource("   ", "  ", "справжній текст").source).toBe("справжній текст");
+  });
+});
+
+describe("пам'ять про останню розшифровку", () => {
+  it("зберігається й читається", async () => {
+    await saveLastTranscript(env, 42, "26 серпня о 8:30 виконком");
+    expect(await loadLastTranscript(env, 42)).toBe("26 серпня о 8:30 виконком");
+  });
+
+  it("у кожного своя", async () => {
+    await saveLastTranscript(env, 42, "моє");
+    await saveLastTranscript(env, 77, "чуже");
+    expect(await loadLastTranscript(env, 42)).toBe("моє");
+    expect(await loadLastTranscript(env, 77)).toBe("чуже");
+  });
+
+  it("порожній текст не затирає збережене", async () => {
+    await saveLastTranscript(env, 42, "справжнє");
+    await saveLastTranscript(env, 42, "   ");
+    expect(await loadLastTranscript(env, 42)).toBe("справжнє");
+  });
+
+  it("якщо нічого не зберігали — порожньо", async () => {
+    expect(await loadLastTranscript(env, 42)).toBe("");
+  });
+
+  it("не потрапляє у вибірку нагадувань", async () => {
+    await saveLastTranscript(env, 42, "щойно сказане");
+    await saveReminder(env, 42, 100, "нагадування", at("2020-01-01T09:00:00Z"));
+    const due = await dueReminders(env, at("2026-08-13T09:00:00Z"));
+    expect(due).toHaveLength(1);
+    expect(due[0]?.text).toBe("нагадування");
   });
 });

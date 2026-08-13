@@ -79,6 +79,28 @@ export async function resetSettings(env: Env, userId: number): Promise<void> {
 }
 
 /**
+ * Остання розшифровка користувача. Потрібна, щоб `/remind` без тексту
+ * підхоплював щойно надиктоване — відповідати на повідомлення в Telegram
+ * незручно, а це найчастіший сценарій.
+ */
+const LAST_TTL_SECONDS = 86_400;
+
+export async function saveLastTranscript(
+  env: Env,
+  userId: number,
+  text: string,
+): Promise<void> {
+  if (!text.trim()) return;
+  await env.SETTINGS.put(`last:${userId}`, text.trim(), {
+    expirationTtl: LAST_TTL_SECONDS,
+  });
+}
+
+export async function loadLastTranscript(env: Env, userId: number): Promise<string> {
+  return (await env.SETTINGS.get(`last:${userId}`)) ?? "";
+}
+
+/**
  * Захист від повторної обробки: Telegram перешле оновлення знову, якщо ми
  * не встигли відповісти вчасно. Повертає true, якщо це дублікат.
  */

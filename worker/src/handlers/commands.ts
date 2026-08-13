@@ -20,7 +20,12 @@ import {
 } from "../reminders";
 import { DEFAULT_TIMEZONE, formatLocal } from "../timezone";
 import { STYLES, selectHintTerms } from "../prompts";
-import { loadSettings, resetSettings, updateSettings } from "../settings";
+import {
+  loadLastTranscript,
+  loadSettings,
+  resetSettings,
+  updateSettings,
+} from "../settings";
 import type { TelegramClient, TgMessage } from "../telegram";
 import * as texts from "../texts";
 
@@ -43,6 +48,22 @@ export function parseCommand(text: string): { name: string; args: string } | nul
   const match = /^\/([a-zA-Z_]+)(?:@\w+)?(?:\s+([\s\S]*))?$/.exec(text.trim());
   if (!match?.[1]) return null;
   return { name: match[1].toLowerCase(), args: (match[2] ?? "").trim() };
+}
+
+/**
+ * Звідки брати текст нагадування: явний аргумент команди, повідомлення, на
+ * яке відповіли, або остання розшифровка. Останнє — головний шлях: у
+ * Telegram відповідати на повідомлення незручно, а `/remind` одразу після
+ * голосового це найчастіший сценарій.
+ */
+export function pickReminderSource(
+  args: string,
+  replied: string,
+  last: string,
+): { source: string; fromHistory: boolean } {
+  if (args.trim()) return { source: args, fromHistory: false };
+  if (replied.trim()) return { source: replied, fromHistory: false };
+  return { source: last, fromHistory: Boolean(last.trim()) };
 }
 
 export async function handleCommand(
@@ -288,10 +309,13 @@ async function handleRemind(
   args: string,
 ): Promise<void> {
   const chatId = message.chat.id;
-  // Без тексту команда бере його з повідомлення, на яке відповіли:
-  // зручно перетворювати щойно надиктовану розшифровку на нагадування.
-  const source =
-    args || message.reply_to_message?.text || message.reply_to_message?.caption || "";
+  const replied = message.reply_to_message?.text || message.reply_to_message?.caption || "";
+  const { source, fromHistory } = pickReminderSource(
+    args,
+    replied,
+    // Історію читаємо лише коли більше нема звідки взяти текст.
+    args.trim() || replied.trim() ? "" : await loadLastTranscript(env, userId),
+  );
 
   if (!source.trim()) {
     await tg.sendMessage(chatId, texts.REMIND_HELP, { html: true });
@@ -310,7 +334,11 @@ async function handleRemind(
     await saveReminder(env, userId, chatId, what, dueAt);
     await tg.sendMessage(
       chatId,
-      texts.REMIND_SAVED(what, formatLocal(new Date(dueAt), env.TIMEZONE || DEFAULT_TIMEZONE)),
+      texts.REMIND_SAVED(
+        what,
+        formatLocal(new Date(dueAt), env.TIMEZONE || DEFAULT_TIMEZONE),
+        fromHistory,
+      ),
       { html: true },
     );
   } catch (error) {
