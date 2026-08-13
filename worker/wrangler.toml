@@ -13,10 +13,6 @@ id = "ЗАМІНИТИ_НА_ID_З_КОМАНДИ_WRANGLER"
 crons = ["* * * * *"]
 
 [vars]
-# Кому дозволено користуватись ботом: Telegram ID через кому.
-# Порожньо — бот нікого не пускає і показує ID у відповідь.
-ALLOWED_USER_IDS = ""
-
 # Рушій розпізнавання за замовчуванням: groq | openai
 STT_PROVIDER = "groq"
 GROQ_WHISPER_MODEL = "whisper-large-v3"
@@ -43,3 +39,7 @@ OPENROUTER_APP_TITLE = "Voice2Text UA Bot"
 #   npx wrangler secret put OPENROUTER_API_KEY
 #   npx wrangler secret put GROQ_API_KEY
 #   npx wrangler secret put WEBHOOK_SECRET
+#
+# Список дозволених Telegram ID теж секрет, а не змінна — інакше він
+# лежав би в git і зникав при кожному оновленні коду:
+#   npx wrangler secret put ALLOWED_USER_IDS

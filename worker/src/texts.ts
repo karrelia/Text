@@ -48,8 +48,9 @@ export const HELP =
 export const NO_ACCESS = (userId: number) =>
   "🔒 Цей бот приватний.\n\n" +
   `Твій Telegram ID: <code>${userId}</code>\n` +
-  "Якщо це твій бот — додай цей ID у <code>ALLOWED_USER_IDS</code> " +
-  "у файлі wrangler.toml і виконай <code>npx wrangler deploy</code>.";
+  "Якщо це твій бот — виконай у теці worker:\n" +
+  "<code>npx wrangler secret put ALLOWED_USER_IDS</code>\n" +
+  "і встав цей ID. Застосується одразу, deploy не потрібен.";
 
 export const NOT_AUDIO =
   "Я обробляю тільки аудіо. Надішли голосове повідомлення, аудіофайл " +
