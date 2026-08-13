@@ -16,9 +16,9 @@ from aiogram.types import Message
 
 from .. import texts
 from ..deps import Deps
-from ..prompts import build_whisper_hint
+from ..prompts import build_whisper_hint, style_kind
 from ..services.audio import AudioError
-from ..services.cleanup import clean_transcript, split_for_telegram
+from ..services.cleanup import process_transcript, split_for_telegram
 from ..services.openrouter import OpenRouterError
 from ..services.stt import TranscriptionError, build_backend, transcribe_audio
 
@@ -134,10 +134,15 @@ async def handle_audio(message: Message, deps: Deps) -> None:
             return
 
         if user.style != "raw":
-            await _edit(status, texts.STATUS_CLEANING)
+            waiting = (
+                texts.STATUS_GENERATING
+                if style_kind(user.style) == "generate"
+                else texts.STATUS_CLEANING
+            )
+            await _edit(status, waiting)
             await message.bot.send_chat_action(message.chat.id, ChatAction.TYPING)
 
-        cleaned = await clean_transcript(
+        cleaned = await process_transcript(
             transcript, user, deps.openrouter, deps.settings.llm_temperature
         )
 

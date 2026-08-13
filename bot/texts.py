@@ -51,6 +51,7 @@ NOT_AUDIO = (
 STATUS_DOWNLOADING = "⏬ Завантажую запис…"
 STATUS_TRANSCRIBING = "🎧 Розпізнаю мовлення…"
 STATUS_CLEANING = "✨ Причісую текст…"
+STATUS_GENERATING = "🎨 Складаю промт…"
 
 EMPTY_RESULT = "🤷 У записі не вдалося розібрати жодного слова."
 
@@ -118,7 +119,13 @@ STT_NO_KEY = (
     "Додай його в .env і перезапусти бота."
 )
 
-STYLE_PICK = "<b>Стиль обробки</b>\n\nЗараз: {current}"
+STYLE_PICK = (
+    "<b>Режим обробки</b>\n\n"
+    "✍️ <b>Розшифровка</b> — записує сказане охайно, нічого не додаючи.\n"
+    "🎬🖼📝 <b>Генерація</b> — навпаки, розгортає надиктовану ідею й свідомо "
+    "додає деталі, яких ви не називали.\n\n"
+    "Зараз: {current}"
+)
 
 
 def render_settings(user: UserSettings, ffmpeg_ok: bool) -> str:
@@ -131,7 +138,7 @@ def render_settings(user: UserSettings, ffmpeg_ok: bool) -> str:
         f"🎧 Розпізнавання: {escape(provider)}",
         f"   модель: <code>{escape(user.stt_model)}</code>",
         f"🧠 Обробка тексту: <code>{escape(user.llm_model)}</code>",
-        f"✍️ Стиль: {escape(style['title'])} — {escape(style['hint'])}",
+        f"🎛 Режим: {escape(style['title'])} — {escape(style['hint'])}",
         f"📖 Словник: {_preview(user.glossary)}",
         f"➕ Побажання: {_preview(user.extra_prompt)}",
     ]

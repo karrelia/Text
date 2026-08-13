@@ -1,8 +1,8 @@
 /** Головний сценарій: голосове повідомлення → чистий текст. */
 
 import { type Env, numberVar } from "./env";
-import { OpenRouterError, cleanTranscript } from "./openrouter";
-import { buildWhisperHint } from "./prompts";
+import { OpenRouterError, processTranscript } from "./openrouter";
+import { buildWhisperHint, styleKind } from "./prompts";
 import { loadSettings } from "./settings";
 import { TranscriptionError, transcribe } from "./stt";
 import {
@@ -65,9 +65,13 @@ export async function handleAudioMessage(
     }
 
     if (user.style !== "raw") {
-      await tg.editMessage(chatId, status.message_id, texts.STATUS_CLEANING);
+      const waiting =
+        styleKind(user.style) === "generate"
+          ? texts.STATUS_GENERATING
+          : texts.STATUS_CLEANING;
+      await tg.editMessage(chatId, status.message_id, waiting);
     }
-    cleaned = await cleanTranscript(env, transcript, user);
+    cleaned = await processTranscript(env, transcript, user);
   } catch (error) {
     await tg.editMessage(chatId, status.message_id, describe(error), { html: true });
     return;

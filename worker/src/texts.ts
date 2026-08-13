@@ -26,14 +26,18 @@ export const HELP =
   "<b>Команди</b>\n" +
   "/settings — поточні налаштування\n" +
   "/model — модель для обробки тексту\n" +
-  "/style — стиль обробки\n" +
+  "/style — режим обробки: розшифровка або генерація промтів\n" +
   "/stt — рушій розпізнавання мови\n" +
   "/glossary — імена й терміни, які треба писати правильно\n" +
-  "/prompt — додаткові побажання до редагування\n" +
+  "/prompt — додаткові побажання до обробки\n" +
   "/reset — скинути все до типових значень\n\n" +
+  "<b>Два режими.</b> За замовчуванням я записую сказане охайно й нічого не " +
+  "додаю. У режимах генерації (/style) навпаки — розгортаю надиктовану ідею " +
+  "в готовий промт для відео чи зображення, дописуючи освітлення, план, " +
+  "настрій і деталі, яких ви не називали.\n\n" +
   "<b>Порада.</b> Якщо в записах регулярно звучать прізвища, назви компаній чи " +
   "технічні терміни — додай їх у /glossary. Це помітно підвищує точність, бо " +
-  "підказка йде і в розпізнавання, і в редагування.";
+  "підказка йде і в розпізнавання, і в обробку.";
 
 export const NO_ACCESS = (userId: number) =>
   "🔒 Цей бот приватний.\n\n" +
@@ -47,6 +51,7 @@ export const NOT_AUDIO =
 
 export const STATUS_TRANSCRIBING = "🎧 Розпізнаю мовлення…";
 export const STATUS_CLEANING = "✨ Причісую текст…";
+export const STATUS_GENERATING = "🎨 Складаю промт…";
 export const EMPTY_RESULT = "🤷 У записі не вдалося розібрати жодного слова.";
 
 export const ERROR_TOO_LONG = (duration: number, limit: number) =>
@@ -115,7 +120,11 @@ export const STT_NO_KEY =
   "wrangler secret put і зроби deploy.";
 
 export const STYLE_PICK = (current: string) =>
-  `<b>Стиль обробки</b>\n\nЗараз: ${escapeHtml(current)}`;
+  "<b>Режим обробки</b>\n\n" +
+  "✍️ <b>Розшифровка</b> — записує сказане охайно, нічого не додаючи.\n" +
+  "🎬🖼📝 <b>Генерація</b> — навпаки, розгортає надиктовану ідею й свідомо " +
+  "додає деталі, яких ви не називали.\n\n" +
+  `Зараз: ${escapeHtml(current)}`;
 
 export function renderSettings(user: UserSettings): string {
   const style = STYLES[user.style] ?? STYLES.clean!;
@@ -125,7 +134,7 @@ export function renderSettings(user: UserSettings): string {
     `🎧 Розпізнавання: ${PROVIDER_TITLES[user.sttProvider]}`,
     `   модель: <code>${escapeHtml(user.sttModel)}</code>`,
     `🧠 Обробка тексту: <code>${escapeHtml(user.llmModel)}</code>`,
-    `✍️ Стиль: ${style.title} — ${style.hint}`,
+    `🎛 Режим: ${style.title} — ${style.hint}`,
     `📖 Словник: ${preview(user.glossary)}`,
     `➕ Побажання: ${preview(user.extraPrompt)}`,
   ].join("\n");
