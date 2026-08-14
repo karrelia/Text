@@ -7,7 +7,7 @@ import {
   ReminderError,
   createReminder,
   keyTail,
-  looksLikeReminder,
+  reminderIntent,
 } from "./reminders";
 import { loadSettings, saveLastDocument, saveLastTranscript } from "./settings";
 import { TranscriptionError, transcribe } from "./stt";
@@ -108,9 +108,12 @@ export async function handleAudioMessage(
 }
 
 /**
- * Створює нагадування, якщо сказане на нього схоже. Мовчить, коли часу в
- * тексті немає: людина просто надиктувала нотатку зі словом «нагадування»,
- * і сварити її за це не варто.
+ * Створює нагадування, якщо сказане на нього схоже.
+ *
+ * Про невдачу мовчимо лише тоді, коли намір був слабкий: людина надиктувала
+ * нотатку, у якій просто трапилось слово «нагадування». Якщо ж прохання було
+ * прямим («нагадай…», «додай нагадування…»), мовчання — найгірша відповідь:
+ * людина чекає, а нічого не сталося й незрозуміло чому.
  */
 export async function maybeRemind(
   env: Env,
@@ -119,7 +122,8 @@ export async function maybeRemind(
   userId: number,
   text: string,
 ): Promise<boolean> {
-  if (!looksLikeReminder(text)) return false;
+  const intent = reminderIntent(text);
+  if (intent === "none") return false;
 
   const user = await loadSettings(env, userId);
   if (!user.autoRemind) return false;
@@ -144,6 +148,12 @@ export async function maybeRemind(
     return true;
   } catch (error) {
     if (error instanceof ReminderError) {
+      if (intent === "strong") {
+        await tg.sendMessage(chatId, texts.REMIND_AUTO_FAILED(error.message), {
+          html: true,
+        });
+        return true;
+      }
       console.log("Схоже на нагадування, але без часу:", error.message);
       return false;
     }

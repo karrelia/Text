@@ -4,7 +4,7 @@ import type { Env } from "./env";
 import { OpenRouterError, complete, stripWrapper } from "./openrouter";
 import { buildReminderPrompt } from "./prompts";
 import type { UserSettings } from "./settings";
-import { type RepeatKind, isRepeatKind } from "./recurrence";
+import { type Repeat, parseRepeat } from "./recurrence";
 import { DEFAULT_TIMEZONE, formatLocal, localNow, zonedToUtc } from "./timezone";
 
 export class ReminderError extends Error {}
@@ -16,13 +16,13 @@ export interface Reminder {
   text: string;
   dueAt: number;
   /** Порожньо — одноразове нагадування. */
-  repeat?: RepeatKind;
+  repeat?: Repeat;
 }
 
 interface StoredReminder {
   chatId: number;
   text: string;
-  repeat?: RepeatKind;
+  repeat?: unknown;
 }
 
 /** Скільки нагадувань може висіти на одного користувача. */
@@ -61,38 +61,74 @@ export function keyFromTail(userId: number, tail: string): string {
  * Слова, після яких людина майже завжди просить нагадати. Свідомо без
  * минулого часу («нагадав», «напомнив») — то розповідь, а не прохання.
  */
-const TRIGGER_WORDS = new Set([
+const STRONG_WORDS = new Set([
   "нагадай",
   "нагадайте",
-  "нагадати",
-  "нагадування",
   "нагадуй",
+  "нагадуйте",
   "нагадаєш",
   "нагадаєте",
   "напомни",
   "напомніть",
-  "напоминание",
+]);
+
+const WEAK_WORDS = new Set(["нагадати", "нагадування", "напоминание"]);
+
+/** Дієслова, після яких «нагадування» стає прямим проханням. */
+const IMPERATIVES = new Set([
+  "додай",
+  "додайте",
+  "постав",
+  "поставте",
+  "створи",
+  "створіть",
+  "зроби",
+  "зробіть",
+  "запиши",
+  "запишіть",
 ]);
 
 // «не забудь» і «не забути» — різні корені на письмі, треба обидва.
-const TRIGGER_PHRASES = [/не\s+забу[дт]/iu];
+const STRONG_PHRASES = [/не\s+забу[дт]/iu];
+
+/** Наскільки впевнено сказане є проханням нагадати. */
+export type ReminderIntent = "strong" | "weak" | "none";
 
 /**
- * Чи схоже сказане на прохання нагадати. Навмисно дешева перевірка без
- * звернення до моделі: вона виконується на кожному повідомленні, а зайвий
- * виклик LLM коштував би грошей і секунди затримки на кожній розшифровці.
+ * Навмисно дешева перевірка без звернення до моделі: вона виконується на
+ * кожному повідомленні, а зайвий виклик LLM коштував би грошей і секунди
+ * затримки на кожній розшифровці.
+ *
+ * Сила наміру визначає, чи мовчати при невдачі. «Нагадай…» чи «додай
+ * нагадування…» — пряме прохання, і про помилку треба сказати. Просто слово
+ * «нагадування» посеред нотатки — привід спробувати, але не сварити людину,
+ * якщо часу в тексті не виявилось.
  */
-export function looksLikeReminder(text: string): boolean {
+export function reminderIntent(text: string): ReminderIntent {
   const trimmed = text.trim();
-  if (!trimmed) return false;
+  if (!trimmed) return "none";
 
-  if (TRIGGER_PHRASES.some((phrase) => phrase.test(trimmed))) return true;
+  if (STRONG_PHRASES.some((phrase) => phrase.test(trimmed))) return "strong";
 
   // \b не працює з кирилицею (він рахує лише латиницю), тому ріжемо на слова.
-  for (const word of trimmed.toLowerCase().split(/[^\p{L}]+/u)) {
-    if (TRIGGER_WORDS.has(word)) return true;
+  const words = trimmed.toLowerCase().split(/[^\p{L}]+/u);
+  let weak = false;
+
+  for (const [index, word] of words.entries()) {
+    if (STRONG_WORDS.has(word)) return "strong";
+    if (!WEAK_WORDS.has(word)) continue;
+    // «Додай нагадування» — таке саме пряме прохання, як «нагадай».
+    if (words.slice(Math.max(0, index - 2), index).some((prev) => IMPERATIVES.has(prev))) {
+      return "strong";
+    }
+    weak = true;
   }
-  return false;
+
+  return weak ? "weak" : "none";
+}
+
+export function looksLikeReminder(text: string): boolean {
+  return reminderIntent(text) !== "none";
 }
 
 // ── Розбір фрази ─────────────────────────────────────────────────────────────
@@ -100,7 +136,7 @@ export function looksLikeReminder(text: string): boolean {
 interface ParsedReminder {
   when: string;
   what: string;
-  repeat?: RepeatKind;
+  repeat?: Repeat;
 }
 
 export function parseReminderReply(raw: string): ParsedReminder {
@@ -126,7 +162,10 @@ export function parseReminderReply(raw: string): ParsedReminder {
     when: payload.when,
     what: payload.what,
     // Невідоме значення трактуємо як «без повтору», а не як помилку.
-    ...(isRepeatKind(payload.repeat) ? { repeat: payload.repeat } : {}),
+    ...((): { repeat?: Repeat } => {
+      const repeat = parseRepeat(payload.repeat);
+      return repeat ? { repeat } : {};
+    })(),
   };
 }
 
@@ -135,7 +174,7 @@ export async function planReminder(
   user: UserSettings,
   text: string,
   now: Date = new Date(),
-): Promise<{ dueAt: number; what: string; repeat?: RepeatKind }> {
+): Promise<{ dueAt: number; what: string; repeat?: Repeat }> {
   const timeZone = env.TIMEZONE || DEFAULT_TIMEZONE;
   const { stamp, weekday } = localNow(now, timeZone);
 
@@ -179,7 +218,7 @@ export async function saveReminder(
   chatId: number,
   text: string,
   dueAt: number,
-  repeat?: RepeatKind,
+  repeat?: Repeat,
 ): Promise<string> {
   const salt = Math.random().toString(36).slice(2, 8);
   const key = reminderKey(userId, dueAt, salt);
@@ -206,7 +245,10 @@ export async function listReminders(env: Env, userId: number): Promise<Reminder[
       chatId: value.chatId,
       text: value.text,
       dueAt: meta.dueAt,
-      ...(isRepeatKind(value.repeat) ? { repeat: value.repeat } : {}),
+      ...((): { repeat?: Repeat } => {
+        const repeat = parseRepeat(value.repeat);
+        return repeat ? { repeat } : {};
+      })(),
     });
   }
 
@@ -234,7 +276,10 @@ export async function dueReminders(env: Env, now: number): Promise<Reminder[]> {
       chatId: value.chatId,
       text: value.text,
       dueAt: meta.dueAt,
-      ...(isRepeatKind(value.repeat) ? { repeat: value.repeat } : {}),
+      ...((): { repeat?: Repeat } => {
+        const repeat = parseRepeat(value.repeat);
+        return repeat ? { repeat } : {};
+      })(),
     });
   }
 
@@ -248,7 +293,7 @@ export async function createReminder(
   userId: number,
   chatId: number,
   text: string,
-): Promise<{ key: string; dueAt: number; what: string; repeat?: RepeatKind }> {
+): Promise<{ key: string; dueAt: number; what: string; repeat?: Repeat }> {
   const existing = await listReminders(env, userId);
   if (existing.length >= MAX_PER_USER) {
     throw new ReminderError(

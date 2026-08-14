@@ -2,7 +2,7 @@
 
 import { PROVIDER_TITLES } from "./env";
 import { STYLES } from "./prompts";
-import { REPEAT_TITLES, type RepeatKind } from "./recurrence";
+import { type Repeat, repeatTitle } from "./recurrence";
 import type { UserSettings } from "./settings";
 
 export function escapeHtml(value: string): string {
@@ -147,27 +147,26 @@ export const REMIND_HELP =
   "повідомлення, якщо треба взяти саме його.\n\n" +
   "Список: /reminders";
 
-const repeatNote = (repeat?: RepeatKind) =>
-  repeat ? ` (${REPEAT_TITLES[repeat]})` : "";
+const repeatNote = (repeat?: Repeat) => (repeat ? ` (${repeatTitle(repeat)})` : "");
 
 export const REMIND_SAVED = (
   what: string,
   when: string,
   fromLast = false,
-  repeat?: RepeatKind,
+  repeat?: Repeat,
 ) =>
   `⏰ Нагадаю <b>${escapeHtml(when)}</b>${repeatNote(repeat)}\n${escapeHtml(what)}` +
   (fromLast ? "\n\n<i>взято з останньої розшифровки</i>" : "");
 
-export const REMIND_AUTO = (what: string, when: string, repeat?: RepeatKind) =>
+export const REMIND_AUTO = (what: string, when: string, repeat?: Repeat) =>
   `⏰ Нагадаю <b>${escapeHtml(when)}</b>${repeatNote(repeat)}\n${escapeHtml(what)}`;
 
-export const REMINDER_FIRES_REPEAT = (text: string, when: string, repeat: RepeatKind) =>
-  `⏰ <b>Нагадування</b> (${REPEAT_TITLES[repeat]})\n\n${escapeHtml(text)}\n\n` +
+export const REMINDER_FIRES_REPEAT = (text: string, when: string, repeat: Repeat) =>
+  `⏰ <b>Нагадування</b> (${repeatTitle(repeat)})\n\n${escapeHtml(text)}\n\n` +
   `<i>наступне — ${escapeHtml(when)}</i>`;
 
-export const REMINDER_LABEL = (when: string, text: string, repeat?: RepeatKind) =>
-  `${when}${repeat ? ` ${REPEAT_TITLES[repeat]}` : ""} — ${text}`;
+export const REMINDER_LABEL = (when: string, text: string, repeat?: Repeat) =>
+  `${when}${repeat ? ` ${repeatTitle(repeat)}` : ""} — ${text}`;
 
 export const AUTO_REMIND_ON =
   "⏰ Тепер створюю нагадування без команди.\n\n" +
@@ -177,8 +176,13 @@ export const AUTO_REMIND_ON =
 export const AUTO_REMIND_OFF =
   "🔇 Більше не створюю нагадування самостійно. Тільки за командою /remind.";
 
-export const REMIND_FAILED = (reason: string) =>
-  `🤔 ${escapeHtml(reason)}`;
+export const REMIND_FAILED = (reason: string) => `🤔 ${escapeHtml(reason)}`;
+
+/** Прохання було явним, але не вийшло — мовчати тут не можна. */
+export const REMIND_AUTO_FAILED = (reason: string) =>
+  `🤔 Схоже на прохання нагадати, але не вийшло: ${escapeHtml(reason)}\n\n` +
+  "Спробуй сказати конкретніше, наприклад «нагадай завтра о 9 здати звіт» " +
+  "або «нагадуй щомісяця 29 числа передати показники».";
 
 export const REMIND_LIMIT = (max: number) =>
   `📌 Уже назбиралось ${max} нагадувань. Прибери зайві через /reminders.`;
