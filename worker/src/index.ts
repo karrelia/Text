@@ -10,7 +10,7 @@
 import { type Env, allowedUserIds } from "./env";
 import { handleCallback } from "./handlers/callbacks";
 import { COMMANDS, handleCommand, parseCommand } from "./handlers/commands";
-import { handleAudioMessage, handlePhotoMessage } from "./pipeline";
+import { handleAudioMessage, handlePhotoMessage, maybeRemind } from "./pipeline";
 import { deleteReminder, dueReminders } from "./reminders";
 import { seenUpdate } from "./settings";
 import {
@@ -119,9 +119,11 @@ async function handleUpdate(env: Env, update: TgUpdate): Promise<void> {
     const command = parseCommand(message.text);
     if (command) {
       await handleCommand(env, tg, message, userId, command.name, command.args);
-    } else {
-      await tg.sendMessage(message.chat.id, texts.NOT_AUDIO);
+      return;
     }
+    // Написане від руки теж може бути проханням нагадати — без команди.
+    if (await maybeRemind(env, tg, message.chat.id, userId, message.text)) return;
+    await tg.sendMessage(message.chat.id, texts.NOT_AUDIO);
     return;
   }
 

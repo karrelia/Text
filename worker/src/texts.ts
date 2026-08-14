@@ -33,6 +33,7 @@ export const HELP =
   "/stt — рушій розпізнавання мови\n" +
   "/vision — модель для читання фото\n" +
   "/remind — створити нагадування\n" +
+  "/autoremind — чи створювати нагадування без команди\n" +
   "/reminders — список нагадувань\n" +
   "/glossary — імена й терміни, які треба писати правильно\n" +
   "/prompt — додаткові побажання до обробки\n" +
@@ -148,6 +149,17 @@ export const REMIND_SAVED = (what: string, when: string, fromLast = false) =>
   `⏰ Нагадаю <b>${escapeHtml(when)}</b>\n${escapeHtml(what)}` +
   (fromLast ? "\n\n<i>взято з останньої розшифровки</i>" : "");
 
+export const REMIND_AUTO = (what: string, when: string) =>
+  `⏰ Нагадаю <b>${escapeHtml(when)}</b>\n${escapeHtml(what)}`;
+
+export const AUTO_REMIND_ON =
+  "⏰ Тепер створюю нагадування без команди.\n\n" +
+  "Просто скажи або напиши «нагадай завтра о 9 здати звіт» — або додай " +
+  "слово «нагадування» в кінці надиктованого. Команда /remind теж працює.";
+
+export const AUTO_REMIND_OFF =
+  "🔇 Більше не створюю нагадування самостійно. Тільки за командою /remind.";
+
 export const REMIND_FAILED = (reason: string) =>
   `🤔 ${escapeHtml(reason)}`;
 
@@ -189,6 +201,7 @@ export function renderSettings(user: UserSettings): string {
     `🎛 Режим: ${style.title} — ${style.hint}`,
     `📖 Словник: ${preview(user.glossary)}`,
     `➕ Побажання: ${preview(user.extraPrompt)}`,
+    `⏰ Нагадування без команди: ${user.autoRemind ? "увімкнено" : "вимкнено"}`,
   ].join("\n");
 }
 

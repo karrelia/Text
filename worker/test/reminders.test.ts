@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ReminderError,
+  looksLikeReminder,
   keyFromTail,
   keyTail,
   parseKey,
@@ -166,5 +167,54 @@ describe("кодування фото", () => {
 
   it("порожній масив дає порожній рядок", () => {
     expect(toBase64(new Uint8Array())).toBe("");
+  });
+});
+
+// Команду /remind вводити незручно, тож намір розпізнається за словами.
+// Перевірка дешева навмисно: вона виконується на кожному повідомленні.
+describe("розпізнавання наміру нагадати", () => {
+  it("ловить пряме прохання", () => {
+    expect(looksLikeReminder("нагадай завтра о 9 здати звіт")).toBe(true);
+    expect(looksLikeReminder("Нагадайте мені про нараду")).toBe(true);
+    expect(looksLikeReminder("треба нагадати про показники")).toBe(true);
+  });
+
+  it("ловить слово в кінці, як у живому записі", () => {
+    expect(looksLikeReminder("26 серпня, 8:30, виконком, нагадування.")).toBe(true);
+  });
+
+  it("ловить суржикові варіанти", () => {
+    expect(looksLikeReminder("напомни завтра про звіт")).toBe(true);
+    expect(looksLikeReminder("постав напоминание на вівторок")).toBe(true);
+  });
+
+  it("ловить «не забудь»", () => {
+    expect(looksLikeReminder("не забудь у п'ятницю подзвонити")).toBe(true);
+    expect(looksLikeReminder("не забути передати показники")).toBe(true);
+  });
+
+  it("не спрацьовує на розповіді в минулому часі", () => {
+    expect(looksLikeReminder("я нагадав йому про борг ще вчора")).toBe(false);
+    expect(looksLikeReminder("вона нагадала про засідання")).toBe(false);
+  });
+
+  it("не спрацьовує на звичайній нотатці", () => {
+    expect(looksLikeReminder("перевірити показники по вулиці Озерна")).toBe(false);
+    expect(looksLikeReminder("акт про пломбування водомірів складено")).toBe(false);
+  });
+
+  it("не чіпляється до частин інших слів", () => {
+    // «нагадування» всередині довшого слова не має рахуватись словом.
+    expect(looksLikeReminder("супернагадувальний пристрій")).toBe(false);
+  });
+
+  it("розділові знаки не заважають", () => {
+    expect(looksLikeReminder("нагадай!")).toBe(true);
+    expect(looksLikeReminder("...нагадування...")).toBe(true);
+  });
+
+  it("порожній текст не намір", () => {
+    expect(looksLikeReminder("")).toBe(false);
+    expect(looksLikeReminder("   ")).toBe(false);
   });
 });

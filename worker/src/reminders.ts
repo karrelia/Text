@@ -46,6 +46,46 @@ export function keyFromTail(userId: number, tail: string): string {
   return `rem:${userId}:${tail}`;
 }
 
+// ── Розпізнавання наміру ─────────────────────────────────────────────────────
+
+/**
+ * Слова, після яких людина майже завжди просить нагадати. Свідомо без
+ * минулого часу («нагадав», «напомнив») — то розповідь, а не прохання.
+ */
+const TRIGGER_WORDS = new Set([
+  "нагадай",
+  "нагадайте",
+  "нагадати",
+  "нагадування",
+  "нагадуй",
+  "нагадаєш",
+  "нагадаєте",
+  "напомни",
+  "напомніть",
+  "напоминание",
+]);
+
+// «не забудь» і «не забути» — різні корені на письмі, треба обидва.
+const TRIGGER_PHRASES = [/не\s+забу[дт]/iu];
+
+/**
+ * Чи схоже сказане на прохання нагадати. Навмисно дешева перевірка без
+ * звернення до моделі: вона виконується на кожному повідомленні, а зайвий
+ * виклик LLM коштував би грошей і секунди затримки на кожній розшифровці.
+ */
+export function looksLikeReminder(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+
+  if (TRIGGER_PHRASES.some((phrase) => phrase.test(trimmed))) return true;
+
+  // \b не працює з кирилицею (він рахує лише латиницю), тому ріжемо на слова.
+  for (const word of trimmed.toLowerCase().split(/[^\p{L}]+/u)) {
+    if (TRIGGER_WORDS.has(word)) return true;
+  }
+  return false;
+}
+
 // ── Розбір фрази ─────────────────────────────────────────────────────────────
 
 interface ParsedReminder {
@@ -182,4 +222,24 @@ export async function dueReminders(env: Env, now: number): Promise<Reminder[]> {
   }
 
   return due;
+}
+
+/** Розібрати фразу й одразу зберегти. Кидає ReminderError, якщо не вийшло. */
+export async function createReminder(
+  env: Env,
+  user: UserSettings,
+  userId: number,
+  chatId: number,
+  text: string,
+): Promise<{ key: string; dueAt: number; what: string }> {
+  const existing = await listReminders(env, userId);
+  if (existing.length >= MAX_PER_USER) {
+    throw new ReminderError(
+      `Уже назбиралось ${MAX_PER_USER} нагадувань. Прибери зайві через /reminders.`,
+    );
+  }
+
+  const { dueAt, what } = await planReminder(env, user, text);
+  const key = await saveReminder(env, userId, chatId, what, dueAt);
+  return { key, dueAt, what };
 }

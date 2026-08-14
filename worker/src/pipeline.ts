@@ -3,6 +3,12 @@
 import { type Env, numberVar } from "./env";
 import { OpenRouterError, processTranscript } from "./openrouter";
 import { buildWhisperHint, styleKind } from "./prompts";
+import {
+  ReminderError,
+  createReminder,
+  keyTail,
+  looksLikeReminder,
+} from "./reminders";
 import { loadSettings, saveLastTranscript } from "./settings";
 import { TranscriptionError, transcribe } from "./stt";
 import {
@@ -15,6 +21,8 @@ import {
   extractPhoto,
 } from "./telegram";
 import * as texts from "./texts";
+import { reminderKeyboard } from "./keyboards";
+import { DEFAULT_TIMEZONE, formatLocal } from "./timezone";
 import { readPhoto } from "./vision";
 
 export async function handleAudioMessage(
@@ -48,6 +56,7 @@ export async function handleAudioMessage(
   await tg.sendChatAction(chatId).catch(() => undefined);
 
   let cleaned: string;
+  let spoken = "";
   try {
     const user = await loadSettings(env, userId);
     const file = await tg.downloadFile(audio.file_id);
@@ -75,13 +84,10 @@ export async function handleAudioMessage(
     }
     cleaned = await processTranscript(env, transcript, user);
 
-    // Для генеративних режимів вивід — це промт, а не сказане, тож для
-    // нагадувань запам'ятовуємо саме мовлення.
-    await saveLastTranscript(
-      env,
-      userId,
-      styleKind(user.style) === "generate" ? transcript : cleaned,
-    );
+    // Для генеративних режимів вивід — це промт, а не сказане, тож і для
+    // пам'яті, і для нагадувань беремо саме мовлення.
+    spoken = styleKind(user.style) === "generate" ? transcript : cleaned;
+    await saveLastTranscript(env, userId, spoken);
   } catch (error) {
     await tg.editMessage(chatId, status.message_id, describe(error), { html: true });
     return;
@@ -96,6 +102,42 @@ export async function handleAudioMessage(
   await tg.editMessage(chatId, status.message_id, parts[0]!);
   for (const part of parts.slice(1)) {
     await tg.sendMessage(chatId, part);
+  }
+
+  await maybeRemind(env, tg, chatId, userId, spoken);
+}
+
+/**
+ * Створює нагадування, якщо сказане на нього схоже. Мовчить, коли часу в
+ * тексті немає: людина просто надиктувала нотатку зі словом «нагадування»,
+ * і сварити її за це не варто.
+ */
+export async function maybeRemind(
+  env: Env,
+  tg: TelegramClient,
+  chatId: number,
+  userId: number,
+  text: string,
+): Promise<boolean> {
+  if (!looksLikeReminder(text)) return false;
+
+  const user = await loadSettings(env, userId);
+  if (!user.autoRemind) return false;
+
+  try {
+    const { key, dueAt, what } = await createReminder(env, user, userId, chatId, text);
+    await tg.sendMessage(
+      chatId,
+      texts.REMIND_AUTO(what, formatLocal(new Date(dueAt), env.TIMEZONE || DEFAULT_TIMEZONE)),
+      { html: true, keyboard: reminderKeyboard(keyTail(key)) },
+    );
+    return true;
+  } catch (error) {
+    if (error instanceof ReminderError) {
+      console.log("Схоже на нагадування, але без часу:", error.message);
+      return false;
+    }
+    throw error;
   }
 }
 

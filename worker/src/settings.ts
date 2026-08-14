@@ -17,6 +17,8 @@ export interface UserSettings {
   style: string;
   glossary: string;
   extraPrompt: string;
+  /** Розпізнавати прохання нагадати без команди /remind. */
+  autoRemind: boolean;
 }
 
 /** Те, що реально лежить у KV: лише явно змінені користувачем поля. */
@@ -32,6 +34,7 @@ export function defaultsFor(env: Env): UserSettings {
     style: DEFAULT_STYLE,
     glossary: "",
     extraPrompt: "",
+    autoRemind: true,
   };
 }
 
@@ -50,6 +53,8 @@ function sanitize(stored: StoredSettings, defaults: UserSettings): UserSettings 
     style,
     glossary: stored.glossary ?? defaults.glossary,
     extraPrompt: stored.extraPrompt ?? defaults.extraPrompt,
+    // ?? а не ||: false — це осмислений вибір, а не «порожньо».
+    autoRemind: stored.autoRemind ?? defaults.autoRemind,
   };
 }
 

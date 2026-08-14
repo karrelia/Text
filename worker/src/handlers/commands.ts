@@ -37,6 +37,7 @@ export const COMMANDS = [
   { command: "vision", description: "Модель для читання фото" },
   { command: "remind", description: "Створити нагадування" },
   { command: "reminders", description: "Список нагадувань" },
+  { command: "autoremind", description: "Нагадування без команди" },
   { command: "glossary", description: "Імена й терміни" },
   { command: "prompt", description: "Додаткові побажання" },
   { command: "reset", description: "Скинути налаштування" },
@@ -118,6 +119,18 @@ export async function handleCommand(
     case "reminders":
       await handleReminders(env, tg, chatId, userId);
       return;
+
+    case "autoremind": {
+      const user = await loadSettings(env, userId);
+      const next = !user.autoRemind;
+      await updateSettings(env, userId, { autoRemind: next });
+      await tg.sendMessage(
+        chatId,
+        next ? texts.AUTO_REMIND_ON : texts.AUTO_REMIND_OFF,
+        html,
+      );
+      return;
+    }
 
     case "style": {
       const user = await loadSettings(env, userId);

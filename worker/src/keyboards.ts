@@ -80,3 +80,12 @@ export function stylesKeyboard(current: string): InlineKeyboard {
     ]),
   };
 }
+
+/** Кнопка «прибрати» під щойно створеним нагадуванням. */
+export function reminderKeyboard(tail: string): InlineKeyboard {
+  return {
+    inline_keyboard: [
+      [{ text: "🗑 Прибрати", callback_data: PREFIX.reminderDelete + tail }],
+    ],
+  };
+}
