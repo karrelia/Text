@@ -118,6 +118,12 @@ export interface LastJob {
   caption?: string;
   /** Сирий результат розпізнавання — дозволяє не платити за STT удруге. */
   transcript?: string;
+  /**
+   * Вказівка на цей запис: «зроби списком», «пиши англійською». Живе разом
+   * із записом і не чіпає налаштувань — наступне голосове почнеться з чистого
+   * аркуша.
+   */
+  note?: string;
 }
 
 export async function saveLastJob(
@@ -136,6 +142,31 @@ export async function loadLastJob(env: Env, userId: number): Promise<LastJob | n
     return null;
   }
   return job;
+}
+
+/**
+ * Очікування власної вказівки: людина натиснула «Своя вказівка», і наступне
+ * її повідомлення — це вказівка, а не нова нотатка чи прохання нагадати.
+ *
+ * Живе п'ять хвилин: забуте очікування з'їло б випадкове повідомлення, а
+ * набрати одну фразу довше п'яти хвилин ніхто не буде.
+ */
+const ASK_TTL_SECONDS = 300;
+const askKey = (userId: number) => `ask:${userId}`;
+
+export async function askForNote(env: Env, userId: number): Promise<void> {
+  await env.SETTINGS.put(askKey(userId), "1", { expirationTtl: ASK_TTL_SECONDS });
+}
+
+/** Повертає true один раз — далі очікування знято. */
+export async function takeNoteRequest(env: Env, userId: number): Promise<boolean> {
+  if (!(await env.SETTINGS.get(askKey(userId)))) return false;
+  await env.SETTINGS.delete(askKey(userId));
+  return true;
+}
+
+export async function clearNoteRequest(env: Env, userId: number): Promise<void> {
+  await env.SETTINGS.delete(askKey(userId));
 }
 
 /** Останній зчитаний із фото документ — джерело для вивантаження в таблицю. */

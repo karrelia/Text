@@ -3,7 +3,7 @@
 import { type Env, numberVar } from "./env";
 import { photoResultKeyboard, reminderKeyboard, voiceResultKeyboard } from "./keyboards";
 import { OpenRouterError, processTranscript } from "./openrouter";
-import { buildWhisperHint, styleKind } from "./prompts";
+import { buildWhisperHint, styleForNote, styleKind } from "./prompts";
 import {
   ReminderError,
   createReminder,
@@ -12,6 +12,7 @@ import {
 } from "./reminders";
 import {
   type LastJob,
+  clearNoteRequest,
   loadSettings,
   saveLastDocument,
   saveLastJob,
@@ -60,6 +61,10 @@ export async function handleAudioMessage(
     return;
   }
 
+  // Новий запис — чистий аркуш: недописана вказівка від попереднього не
+  // повинна з'їсти наступне текстове повідомлення.
+  await clearNoteRequest(env, userId);
+
   await runVoice(env, tg, chatId, userId, {
     kind: "voice",
     fileId: audio.file_id,
@@ -82,6 +87,7 @@ export async function runVoice(
   job: LastJob,
 ): Promise<void> {
   const reusing = Boolean(job.transcript?.trim());
+  const note = job.note ?? "";
   const status = await tg.sendMessage(
     chatId,
     reusing ? texts.STATUS_CLEANING : texts.STATUS_TRANSCRIBING,
@@ -94,6 +100,7 @@ export async function runVoice(
 
   try {
     const user = await loadSettings(env, userId);
+    const style = styleForNote(user.style, note);
 
     if (!reusing) {
       const file = await tg.downloadFile(job.fileId);
@@ -112,18 +119,18 @@ export async function runVoice(
       return;
     }
 
-    if (user.style !== "raw") {
+    if (style !== "raw") {
       const waiting =
-        styleKind(user.style) === "generate"
+        styleKind(style) === "generate"
           ? texts.STATUS_GENERATING
           : texts.STATUS_CLEANING;
       await tg.editMessage(chatId, status.message_id, waiting);
     }
-    cleaned = await processTranscript(env, transcript, user);
+    cleaned = await processTranscript(env, transcript, user, note);
 
     // Для генеративних режимів вивід — це промт, а не сказане, тож і для
     // пам'яті, і для нагадувань беремо саме мовлення.
-    spoken = styleKind(user.style) === "generate" ? transcript : cleaned;
+    spoken = styleKind(style) === "generate" ? transcript : cleaned;
     await saveLastTranscript(env, userId, spoken);
     await saveLastJob(env, userId, { ...job, transcript });
   } catch (error) {
@@ -142,7 +149,10 @@ export async function runVoice(
     await tg.sendMessage(chatId, part);
   }
 
-  await tg.sendMessage(chatId, texts.REDO_HINT, { keyboard: voiceResultKeyboard() });
+  await tg.sendMessage(chatId, texts.REDO_HINT(note), {
+    html: true,
+    keyboard: voiceResultKeyboard(),
+  });
   await maybeRemind(env, tg, chatId, userId, spoken);
 }
 
@@ -162,6 +172,8 @@ export async function handlePhotoMessage(
     await tg.sendMessage(chatId, texts.ERROR_TOO_BIG);
     return;
   }
+
+  await clearNoteRequest(env, userId);
 
   await runPhoto(env, tg, chatId, userId, {
     kind: "photo",
@@ -186,12 +198,14 @@ export async function runPhoto(
   try {
     const user = await loadSettings(env, userId);
     const file = await tg.downloadFile(job.fileId);
+    // Підпис під фото і вказівка — те саме за призначенням, тож ідуть разом:
+    // «лише показники» з підпису лишається чинним і після «зроби таблицею».
     text = await readPhoto(
       env,
       file.body,
       job.mimeType || "image/jpeg",
       user,
-      job.caption ?? "",
+      [job.caption, job.note].filter((part) => part?.trim()).join("\n"),
     );
   } catch (error) {
     await tg.editMessage(chatId, status.message_id, describe(error), { html: true });
@@ -213,9 +227,45 @@ export async function runPhoto(
   // друга перенесе в таблицю для Excel.
   await saveLastDocument(env, userId, text);
   await saveLastJob(env, userId, job);
-  await tg.sendMessage(chatId, texts.REDO_HINT, {
+  await tg.sendMessage(chatId, texts.REDO_HINT(job.note ?? ""), {
+    html: true,
     keyboard: photoResultKeyboard(texts.CSV_BUTTON),
   });
+}
+
+// ── Повторний прогін ─────────────────────────────────────────────────────────
+
+export interface RedoOptions {
+  /** Вказівка на цей прогін. Порожній рядок знімає попередню. */
+  note?: string;
+  /** Розпізнати аудіо наново, а не брати збережений транскрипт. */
+  fresh?: boolean;
+}
+
+/**
+ * Переганяє збережений запис ще раз. Викликається і з кнопки, і з написаної
+ * від руки вказівки — тому бере вже завантажений `job`, а не читає його
+ * вдруге.
+ */
+export async function rerun(
+  env: Env,
+  tg: TelegramClient,
+  chatId: number,
+  userId: number,
+  job: LastJob,
+  options: RedoOptions = {},
+): Promise<void> {
+  const next: LastJob = {
+    ...job,
+    ...(options.note === undefined ? {} : { note: options.note }),
+    ...(options.fresh ? { transcript: "" } : {}),
+  };
+
+  if (next.kind === "photo") {
+    await runPhoto(env, tg, chatId, userId, next);
+    return;
+  }
+  await runVoice(env, tg, chatId, userId, next);
 }
 
 // ── Нагадування без команди ──────────────────────────────────────────────────

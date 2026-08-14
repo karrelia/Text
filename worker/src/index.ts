@@ -10,11 +10,11 @@
 import { type Env, allowedUserIds } from "./env";
 import { handleCallback } from "./handlers/callbacks";
 import { COMMANDS, handleCommand, parseCommand } from "./handlers/commands";
-import { handleAudioMessage, handlePhotoMessage, maybeRemind } from "./pipeline";
+import { handleAudioMessage, handlePhotoMessage, maybeRemind, rerun } from "./pipeline";
 import { deleteReminder, dueReminders, saveReminder } from "./reminders";
 import { nextAfter } from "./recurrence";
 import { DEFAULT_TIMEZONE, formatLocal } from "./timezone";
-import { seenUpdate } from "./settings";
+import { loadLastJob, seenUpdate, takeNoteRequest } from "./settings";
 import {
   TelegramClient,
   type TgUpdate,
@@ -120,7 +120,7 @@ export async function sendDueReminders(env: Env): Promise<number> {
   return sent;
 }
 
-async function handleUpdate(env: Env, update: TgUpdate): Promise<void> {
+export async function handleUpdate(env: Env, update: TgUpdate): Promise<void> {
   if (await seenUpdate(env, update.update_id)) return;
 
   const tg = new TelegramClient(env.TELEGRAM_BOT_TOKEN);
@@ -147,10 +147,21 @@ async function handleUpdate(env: Env, update: TgUpdate): Promise<void> {
 
   if (message.text) {
     const command = parseCommand(message.text);
+    // Очікування знімаємо в будь-якому разі: якщо замість вказівки прийшла
+    // команда, людина передумала, і чекати далі означало б з'їсти якесь
+    // наступне повідомлення.
+    const awaitingNote = await takeNoteRequest(env, userId);
+
     if (command) {
       await handleCommand(env, tg, message, userId, command.name, command.args);
       return;
     }
+
+    if (awaitingNote) {
+      await applyOwnNote(env, tg, message.chat.id, userId, message.text);
+      return;
+    }
+
     // Написане від руки теж може бути проханням нагадати — без команди.
     if (await maybeRemind(env, tg, message.chat.id, userId, message.text)) return;
     await tg.sendMessage(message.chat.id, texts.NOT_AUDIO);
@@ -168,6 +179,23 @@ async function handleUpdate(env: Env, update: TgUpdate): Promise<void> {
   }
 
   await tg.sendMessage(message.chat.id, texts.NOT_AUDIO);
+}
+
+/** Написана від руки вказівка: переганяємо нею останній запис. */
+async function applyOwnNote(
+  env: Env,
+  tg: TelegramClient,
+  chatId: number,
+  userId: number,
+  note: string,
+): Promise<void> {
+  const job = await loadLastJob(env, userId);
+  if (!job) {
+    await tg.sendMessage(chatId, texts.REDO_NOTHING);
+    return;
+  }
+  await tg.sendMessage(chatId, texts.REDO_RUNNING);
+  await rerun(env, tg, chatId, userId, job, { note });
 }
 
 /**

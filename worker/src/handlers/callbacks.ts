@@ -7,12 +7,14 @@ import {
   PRESET_VISION_MODELS,
   modelsKeyboard,
   stylesKeyboard,
+  tweaksKeyboard,
 } from "../keyboards";
 import { OpenRouterError, searchModels, toCsv } from "../openrouter";
-import { runPhoto, runVoice } from "../pipeline";
-import { STYLES } from "../prompts";
+import { type RedoOptions, rerun } from "../pipeline";
+import { PHOTO_TWEAKS, STYLES, TWEAKS, VOICE_TWEAKS } from "../prompts";
 import { deleteReminder, keyFromTail } from "../reminders";
 import {
+  askForNote,
   loadLastDocument,
   loadLastJob,
   loadSettings,
@@ -71,6 +73,21 @@ export async function handleCallback(
     await redo(env, tg, query, userId, chatId, {
       visionModel: data.slice(PREFIX.redoVision.length),
     });
+    return;
+  }
+
+  if (data.startsWith(PREFIX.redoNote)) {
+    const tweak = TWEAKS[data.slice(PREFIX.redoNote.length)];
+    if (!tweak) {
+      await tg.answerCallback(query.id, texts.STALE_CHOICE, true);
+      return;
+    }
+    await redo(env, tg, query, userId, chatId, {}, { note: tweak.text });
+    return;
+  }
+
+  if (data.startsWith(PREFIX.redoAsk)) {
+    await askOwnNote(env, tg, query, userId, chatId);
     return;
   }
 
@@ -211,6 +228,16 @@ async function openRedoPicker(
     return;
   }
 
+  if (kind === "p") {
+    // Знімку пропонуємо своє: списком і таблицею тут доречні, а «стисло»
+    // на зчитаному документі означало б викинути частину прочитаного.
+    const keys = job.kind === "photo" ? PHOTO_TWEAKS : VOICE_TWEAKS;
+    await tg.sendMessage(chatId, texts.REDO_PICK_TWEAK, {
+      keyboard: tweaksKeyboard(keys, texts.REDO_OWN_NOTE_BUTTON),
+    });
+    return;
+  }
+
   if (kind === "v") {
     const found = await searchModels(env, "", { imageOnly: true, limit: 8 });
     const models = found.length > 0 ? found.map((m) => m.id) : PRESET_VISION_MODELS;
@@ -226,11 +253,37 @@ async function openRedoPicker(
 }
 
 /**
+ * Просить написати вказівку своїми словами. Наступне текстове повідомлення
+ * стане нею — про це знає маршрутизатор оновлень.
+ */
+async function askOwnNote(
+  env: Env,
+  tg: TelegramClient,
+  query: TgCallbackQuery,
+  userId: number,
+  chatId: number | undefined,
+): Promise<void> {
+  if (chatId === undefined) {
+    await tg.answerCallback(query.id, texts.STALE_CHOICE, true);
+    return;
+  }
+
+  if (!(await loadLastJob(env, userId))) {
+    await tg.answerCallback(query.id, texts.REDO_NOTHING, true);
+    return;
+  }
+
+  await askForNote(env, userId);
+  await tg.answerCallback(query.id);
+  await tg.sendMessage(chatId, texts.REDO_ASK_NOTE);
+}
+
+/**
  * Зберігає вибір і одразу переганяє той самий запис.
  *
- * Для голосового транскрипт беремо збережений — розпізнавати вдруге нема
- * сенсу, поки не змінився рушій STT. Кнопка «Перерозпізнати» просить
- * свіжий прогін явно.
+ * Модель і стиль лишаються надалі — це вибір, а не примха на один раз.
+ * Вказівка ж навпаки: вона живе разом із записом, у налаштування не
+ * потрапляє й на наступному голосовому не спливе.
  */
 async function redo(
   env: Env,
@@ -239,7 +292,7 @@ async function redo(
   userId: number,
   chatId: number | undefined,
   patch: Parameters<typeof updateSettings>[2],
-  options: { fresh?: boolean } = {},
+  options: RedoOptions = {},
 ): Promise<void> {
   if (chatId === undefined) {
     await tg.answerCallback(query.id, texts.STALE_CHOICE, true);
@@ -261,14 +314,5 @@ async function redo(
     await updateSettings(env, userId, patch);
   }
   await tg.answerCallback(query.id, texts.REDO_RUNNING);
-
-  if (job.kind === "photo") {
-    await runPhoto(env, tg, chatId, userId, job);
-    return;
-  }
-
-  await runVoice(env, tg, chatId, userId, {
-    ...job,
-    ...(options.fresh ? { transcript: "" } : {}),
-  });
+  await rerun(env, tg, chatId, userId, job, options);
 }

@@ -7,7 +7,7 @@
  */
 
 import { type Env, PROVIDER_TITLES, STT_PROVIDERS, apiKeyFor } from "./env";
-import { STYLES } from "./prompts";
+import { STYLES, TWEAKS } from "./prompts";
 import type { InlineKeyboard } from "./telegram";
 
 export const CALLBACK_LIMIT = 64;
@@ -19,12 +19,17 @@ export const PREFIX = {
   provider: "p:",
   reminderDelete: "rd:",
   csv: "csv:",
-  /** Відкрити перелік для повторного прогону: "m" — модель, "s" — стиль, "v" — фото. */
+  /**
+   * Відкрити перелік для повторного прогону: "m" — модель, "s" — стиль,
+   * "v" — модель для фото, "p" — вказівка.
+   */
   redoOpen: "ro:",
   redoModel: "rm:",
   redoStyle: "rs:",
   redoVision: "rv:",
   redoStt: "rt:",
+  redoNote: "rn:",
+  redoAsk: "ra:",
 } as const;
 
 export const PRESET_LLM_MODELS = [
@@ -99,7 +104,10 @@ export function voiceResultKeyboard(): InlineKeyboard {
         { text: "🔁 Інша модель", callback_data: `${PREFIX.redoOpen}m` },
         { text: "✍️ Інший стиль", callback_data: `${PREFIX.redoOpen}s` },
       ],
-      [{ text: "🎧 Перерозпізнати", callback_data: PREFIX.redoStt }],
+      [
+        { text: "💬 Вказівка", callback_data: `${PREFIX.redoOpen}p` },
+        { text: "🎧 Перерозпізнати", callback_data: PREFIX.redoStt },
+      ],
     ],
   };
 }
@@ -108,10 +116,24 @@ export function voiceResultKeyboard(): InlineKeyboard {
 export function photoResultKeyboard(csvLabel: string): InlineKeyboard {
   return {
     inline_keyboard: [
-      [{ text: "🔁 Інша модель", callback_data: `${PREFIX.redoOpen}v` }],
+      [
+        { text: "🔁 Інша модель", callback_data: `${PREFIX.redoOpen}v` },
+        { text: "💬 Вказівка", callback_data: `${PREFIX.redoOpen}p` },
+      ],
       [{ text: csvLabel, callback_data: `${PREFIX.csv}last` }],
     ],
   };
+}
+
+/**
+ * Готові вказівки плюс «своя». Останню кнопку прибрати не можна: перелік
+ * ніколи не вгадає всього, а саме заради довільної фрази це й робилось.
+ */
+export function tweaksKeyboard(keys: string[], ownLabel: string): InlineKeyboard {
+  const rows = keys
+    .filter((key) => TWEAKS[key])
+    .map((key) => [{ text: TWEAKS[key]!.title, callback_data: PREFIX.redoNote + key }]);
+  return { inline_keyboard: [...rows, [{ text: ownLabel, callback_data: PREFIX.redoAsk }]] };
 }
 
 /** Кнопка «прибрати» під щойно створеним нагадуванням. */

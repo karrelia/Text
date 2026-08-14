@@ -5,6 +5,7 @@ import {
   CSV_SYSTEM,
   buildSystemPrompt,
   buildUserMessage,
+  styleForNote,
   temperatureFor,
 } from "./prompts";
 import type { UserSettings } from "./settings";
@@ -137,28 +138,36 @@ export function stripWrapper(text: string): string {
   return cleaned;
 }
 
+/**
+ * `note` — вказівка на один прогін («зроби списком», «пиши англійською»).
+ * Вона не зберігається в налаштуваннях і живе рівно стільки, скільки сам
+ * запис під рукою.
+ */
 export async function processTranscript(
   env: Env,
   transcript: string,
   user: UserSettings,
+  note = "",
 ): Promise<string> {
   const trimmed = transcript.trim();
   if (!trimmed) return "";
-  if (user.style === "raw") return trimmed;
+
+  const style = styleForNote(user.style, note);
+  if (style === "raw") return trimmed;
 
   const messages = [
     {
       role: "system",
-      content: buildSystemPrompt(user.style, user.glossary, user.extraPrompt),
+      content: buildSystemPrompt(style, user.glossary, user.extraPrompt, note),
     },
-    { role: "user", content: buildUserMessage(user.style, trimmed) },
+    { role: "user", content: buildUserMessage(style, trimmed) },
   ];
 
   const result = await complete(
     env,
     user.llmModel,
     messages,
-    temperatureFor(user.style, numberVar(env.LLM_TEMPERATURE, 0.2)),
+    temperatureFor(style, numberVar(env.LLM_TEMPERATURE, 0.2)),
   );
   return stripWrapper(result) || trimmed;
 }
