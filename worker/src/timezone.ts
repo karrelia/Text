@@ -78,6 +78,21 @@ export function zonedToUtc(local: string, timeZone: string): Date | null {
   return Number.isNaN(guess.getTime()) ? null : guess;
 }
 
+/** Складові локального часу — потрібні, щоб рахувати «те саме число наступного місяця». */
+export function localParts(
+  date: Date,
+  timeZone: string,
+): { year: number; month: number; day: number; hour: number; minute: number } {
+  const parts = partsIn(date, timeZone);
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour) % 24,
+    minute: Number(parts.minute),
+  };
+}
+
 /** Момент часу → «19.08.2026, 09:00» у зоні користувача. */
 export function formatLocal(date: Date, timeZone: string): string {
   const parts = partsIn(date, timeZone);

@@ -1,7 +1,12 @@
 /** Клієнт OpenRouter: редагування тексту та каталог моделей. */
 
 import { type Env, numberVar } from "./env";
-import { buildSystemPrompt, buildUserMessage, temperatureFor } from "./prompts";
+import {
+  CSV_SYSTEM,
+  buildSystemPrompt,
+  buildUserMessage,
+  temperatureFor,
+} from "./prompts";
 import type { UserSettings } from "./settings";
 
 export class OpenRouterError extends Error {}
@@ -224,4 +229,73 @@ export async function modelExists(env: Env, modelId: string): Promise<boolean | 
   const models = await listModels(env);
   if (models.length === 0) return null;
   return models.some((model) => model.id === modelId);
+}
+
+// ── Витрати ──────────────────────────────────────────────────────────────────
+
+export interface Credits {
+  spent: number;
+  granted: number;
+}
+
+/**
+ * Скільки витрачено й скільки покладено. OpenRouter має два різні
+ * ендпоінти залежно від віку акаунта, тож пробуємо новий і відкочуємось
+ * на старий.
+ */
+export async function fetchCredits(env: Env): Promise<Credits> {
+  const credits = await tryCredits(env);
+  if (credits) return credits;
+
+  const key = await tryAuthKey(env);
+  if (key) return key;
+
+  throw new OpenRouterError("OpenRouter не віддав дані про витрати.");
+}
+
+async function tryCredits(env: Env): Promise<Credits | null> {
+  try {
+    const response = await fetch(`${BASE_URL}/credits`, { headers: headers(env) });
+    if (!response.ok) return null;
+    const payload = (await response.json()) as {
+      data?: { total_credits?: number; total_usage?: number };
+    };
+    const granted = payload.data?.total_credits;
+    const spent = payload.data?.total_usage;
+    if (typeof granted !== "number" || typeof spent !== "number") return null;
+    return { spent, granted };
+  } catch {
+    return null;
+  }
+}
+
+async function tryAuthKey(env: Env): Promise<Credits | null> {
+  try {
+    const response = await fetch(`${BASE_URL}/auth/key`, { headers: headers(env) });
+    if (!response.ok) return null;
+    const payload = (await response.json()) as {
+      data?: { usage?: number; limit?: number | null };
+    };
+    const spent = payload.data?.usage;
+    if (typeof spent !== "number") return null;
+    const limit = payload.data?.limit;
+    return { spent, granted: typeof limit === "number" ? limit : 0 };
+  } catch {
+    return null;
+  }
+}
+
+// ── Таблиця для Excel ────────────────────────────────────────────────────────
+
+export async function toCsv(env: Env, text: string, model: string): Promise<string> {
+  const result = await complete(
+    env,
+    model,
+    [
+      { role: "system", content: CSV_SYSTEM },
+      { role: "user", content: `<document>\n${text}\n</document>` },
+    ],
+    0,
+  );
+  return stripWrapper(result).trim();
 }

@@ -18,6 +18,7 @@ export const PREFIX = {
   style: "s:",
   provider: "p:",
   reminderDelete: "rd:",
+  csv: "csv:",
 } as const;
 
 export const PRESET_LLM_MODELS = [
@@ -88,4 +89,9 @@ export function reminderKeyboard(tail: string): InlineKeyboard {
       [{ text: "🗑 Прибрати", callback_data: PREFIX.reminderDelete + tail }],
     ],
   };
+}
+
+/** Кнопка «у таблицю» під зчитаним документом. */
+export function csvKeyboard(label: string): InlineKeyboard {
+  return { inline_keyboard: [[{ text: label, callback_data: `${PREFIX.csv}last` }]] };
 }

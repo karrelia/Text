@@ -3,6 +3,8 @@
 import { type Env, PROVIDER_TITLES, apiKeyFor, defaultSttModel, isSttProvider } from "../env";
 import { PREFIX } from "../keyboards";
 import { deleteReminder, keyFromTail } from "../reminders";
+import { OpenRouterError, toCsv } from "../openrouter";
+import { loadLastDocument } from "../settings";
 import { STYLES } from "../prompts";
 import { loadSettings, updateSettings } from "../settings";
 import type { TelegramClient, TgCallbackQuery } from "../telegram";
@@ -29,6 +31,11 @@ export async function handleCallback(
     await updateSettings(env, userId, { llmModel: model });
     await tg.answerCallback(query.id, "Збережено");
     await edit(`${texts.SETTINGS_SAVED} Модель: <code>${texts.escapeHtml(model)}</code>`);
+    return;
+  }
+
+  if (data.startsWith(PREFIX.csv)) {
+    await handleCsv(env, tg, query, userId, chatId);
     return;
   }
 
@@ -90,4 +97,37 @@ export async function handleCallback(
   }
 
   await tg.answerCallback(query.id, texts.STALE_CHOICE, true);
+}
+
+/** Переносить останній зчитаний документ у CSV і надсилає файлом. */
+async function handleCsv(
+  env: Env,
+  tg: TelegramClient,
+  query: TgCallbackQuery,
+  userId: number,
+  chatId: number | undefined,
+): Promise<void> {
+  if (chatId === undefined) {
+    await tg.answerCallback(query.id, texts.STALE_CHOICE, true);
+    return;
+  }
+
+  const document = await loadLastDocument(env, userId);
+  if (!document) {
+    await tg.answerCallback(query.id, texts.CSV_NOTHING, true);
+    return;
+  }
+
+  await tg.answerCallback(query.id, texts.CSV_BUILDING);
+
+  try {
+    const user = await loadSettings(env, userId);
+    const csv = await toCsv(env, document, user.llmModel);
+    const stamp = new Date().toISOString().slice(0, 10);
+    // BOM обов'язковий: без нього Excel показує кирилицю кракозябрами.
+    await tg.sendDocument(chatId, `document-${stamp}.csv`, csv, texts.CSV_CAPTION, true);
+  } catch (error) {
+    const reason = error instanceof OpenRouterError ? error.message : String(error);
+    await tg.sendMessage(chatId, texts.CSV_FAILED(reason), { html: true });
+  }
 }

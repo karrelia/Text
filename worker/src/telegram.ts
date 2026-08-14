@@ -132,6 +132,35 @@ export class TelegramClient {
     await this.call("sendChatAction", { chat_id: chatId, action });
   }
 
+  /**
+   * Надсилає файл. Для CSV додаємо BOM: без нього Excel відкриває
+   * кирилицю кракозябрами.
+   */
+  async sendDocument(
+    chatId: number,
+    fileName: string,
+    content: string,
+    caption?: string,
+    withBom = false,
+  ): Promise<void> {
+    const body = new FormData();
+    body.append("chat_id", String(chatId));
+    if (caption) body.append("caption", caption);
+    body.append(
+      "document",
+      new Blob([(withBom ? "\uFEFF" : "") + content], { type: "text/csv; charset=utf-8" }),
+      fileName,
+    );
+
+    const response = await fetch(
+      `https://api.telegram.org/bot${this.token}/sendDocument`,
+      { method: "POST", body },
+    );
+    if (!response.ok) {
+      throw new TelegramError(`sendDocument: Telegram відповів ${response.status}`);
+    }
+  }
+
   async setMyCommands(commands: { command: string; description: string }[]): Promise<void> {
     await this.call("setMyCommands", { commands });
   }

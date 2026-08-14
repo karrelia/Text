@@ -9,7 +9,7 @@ import {
   keyTail,
   looksLikeReminder,
 } from "./reminders";
-import { loadSettings, saveLastTranscript } from "./settings";
+import { loadSettings, saveLastDocument, saveLastTranscript } from "./settings";
 import { TranscriptionError, transcribe } from "./stt";
 import {
   DOWNLOAD_LIMIT,
@@ -21,7 +21,7 @@ import {
   extractPhoto,
 } from "./telegram";
 import * as texts from "./texts";
-import { reminderKeyboard } from "./keyboards";
+import { csvKeyboard, reminderKeyboard } from "./keyboards";
 import { DEFAULT_TIMEZONE, formatLocal } from "./timezone";
 import { readPhoto } from "./vision";
 
@@ -125,10 +125,20 @@ export async function maybeRemind(
   if (!user.autoRemind) return false;
 
   try {
-    const { key, dueAt, what } = await createReminder(env, user, userId, chatId, text);
+    const { key, dueAt, what, repeat } = await createReminder(
+      env,
+      user,
+      userId,
+      chatId,
+      text,
+    );
     await tg.sendMessage(
       chatId,
-      texts.REMIND_AUTO(what, formatLocal(new Date(dueAt), env.TIMEZONE || DEFAULT_TIMEZONE)),
+      texts.REMIND_AUTO(
+        what,
+        formatLocal(new Date(dueAt), env.TIMEZONE || DEFAULT_TIMEZONE),
+        repeat,
+      ),
       { html: true, keyboard: reminderKeyboard(keyTail(key)) },
     );
     return true;
@@ -201,4 +211,10 @@ export async function handlePhotoMessage(
   for (const part of parts.slice(1)) {
     await tg.sendMessage(chatId, part);
   }
+
+  // Зчитане лишається під рукою: кнопка перенесе його в таблицю для Excel.
+  await saveLastDocument(env, userId, text);
+  await tg.sendMessage(chatId, texts.CSV_HINT, {
+    keyboard: csvKeyboard(texts.CSV_BUTTON),
+  });
 }

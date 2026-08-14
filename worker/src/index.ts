@@ -11,7 +11,9 @@ import { type Env, allowedUserIds } from "./env";
 import { handleCallback } from "./handlers/callbacks";
 import { COMMANDS, handleCommand, parseCommand } from "./handlers/commands";
 import { handleAudioMessage, handlePhotoMessage, maybeRemind } from "./pipeline";
-import { deleteReminder, dueReminders } from "./reminders";
+import { deleteReminder, dueReminders, saveReminder } from "./reminders";
+import { nextAfter } from "./recurrence";
+import { DEFAULT_TIMEZONE, formatLocal } from "./timezone";
 import { seenUpdate } from "./settings";
 import {
   TelegramClient,
@@ -73,16 +75,44 @@ export async function sendDueReminders(env: Env): Promise<number> {
   const tg = new TelegramClient(env.TELEGRAM_BOT_TOKEN);
   let sent = 0;
 
+  const timeZone = env.TIMEZONE || DEFAULT_TIMEZONE;
+
   for (const reminder of due) {
+    // Наступну дату рахуємо до надсилання: якщо запис повторюваний, він має
+    // відродитись навіть коли повідомлення не пройде.
+    const next = reminder.repeat
+      ? nextAfter(reminder.dueAt, reminder.repeat, timeZone, Date.now())
+      : null;
+
     try {
-      await tg.sendMessage(reminder.chatId, texts.REMINDER_FIRES(reminder.text), {
-        html: true,
-      });
+      const text =
+        reminder.repeat && next
+          ? texts.REMINDER_FIRES_REPEAT(
+              reminder.text,
+              formatLocal(new Date(next), timeZone),
+              reminder.repeat,
+            )
+          : texts.REMINDER_FIRES(reminder.text);
+      await tg.sendMessage(reminder.chatId, text, { html: true });
       sent += 1;
     } catch (error) {
       // Не змогли надіслати — лишаємо запис, спробуємо за хвилину.
       console.error("Не вдалося надіслати нагадування", reminder.key, error);
       continue;
+    }
+
+    // Спершу ставимо наступне, потім прибираємо відпрацьоване: якщо між
+    // двома діями щось урветься, краще зайвий раз нагадати, ніж загубити
+    // щомісячне нагадування назавжди.
+    if (reminder.repeat && next) {
+      await saveReminder(
+        env,
+        reminder.userId,
+        reminder.chatId,
+        reminder.text,
+        next,
+        reminder.repeat,
+      );
     }
     await deleteReminder(env, reminder.key);
   }

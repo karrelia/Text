@@ -105,6 +105,22 @@ export async function loadLastTranscript(env: Env, userId: number): Promise<stri
   return (await env.SETTINGS.get(`last:${userId}`)) ?? "";
 }
 
+/** Останній зчитаний із фото документ — джерело для вивантаження в таблицю. */
+export async function saveLastDocument(
+  env: Env,
+  userId: number,
+  text: string,
+): Promise<void> {
+  if (!text.trim()) return;
+  await env.SETTINGS.put(`doc:${userId}`, text.trim(), {
+    expirationTtl: LAST_TTL_SECONDS,
+  });
+}
+
+export async function loadLastDocument(env: Env, userId: number): Promise<string> {
+  return (await env.SETTINGS.get(`doc:${userId}`)) ?? "";
+}
+
 /**
  * Захист від повторної обробки: Telegram перешле оновлення знову, якщо ми
  * не встигли відповісти вчасно. Повертає true, якщо це дублікат.

@@ -2,6 +2,7 @@
 
 import { PROVIDER_TITLES } from "./env";
 import { STYLES } from "./prompts";
+import { REPEAT_TITLES, type RepeatKind } from "./recurrence";
 import type { UserSettings } from "./settings";
 
 export function escapeHtml(value: string): string {
@@ -35,6 +36,7 @@ export const HELP =
   "/remind — створити нагадування\n" +
   "/autoremind — чи створювати нагадування без команди\n" +
   "/reminders — список нагадувань\n" +
+  "/usage — витрати й залишок на OpenRouter\n" +
   "/glossary — імена й терміни, які треба писати правильно\n" +
   "/prompt — додаткові побажання до обробки\n" +
   "/reset — скинути все до типових значень\n\n" +
@@ -145,12 +147,27 @@ export const REMIND_HELP =
   "повідомлення, якщо треба взяти саме його.\n\n" +
   "Список: /reminders";
 
-export const REMIND_SAVED = (what: string, when: string, fromLast = false) =>
-  `⏰ Нагадаю <b>${escapeHtml(when)}</b>\n${escapeHtml(what)}` +
+const repeatNote = (repeat?: RepeatKind) =>
+  repeat ? ` (${REPEAT_TITLES[repeat]})` : "";
+
+export const REMIND_SAVED = (
+  what: string,
+  when: string,
+  fromLast = false,
+  repeat?: RepeatKind,
+) =>
+  `⏰ Нагадаю <b>${escapeHtml(when)}</b>${repeatNote(repeat)}\n${escapeHtml(what)}` +
   (fromLast ? "\n\n<i>взято з останньої розшифровки</i>" : "");
 
-export const REMIND_AUTO = (what: string, when: string) =>
-  `⏰ Нагадаю <b>${escapeHtml(when)}</b>\n${escapeHtml(what)}`;
+export const REMIND_AUTO = (what: string, when: string, repeat?: RepeatKind) =>
+  `⏰ Нагадаю <b>${escapeHtml(when)}</b>${repeatNote(repeat)}\n${escapeHtml(what)}`;
+
+export const REMINDER_FIRES_REPEAT = (text: string, when: string, repeat: RepeatKind) =>
+  `⏰ <b>Нагадування</b> (${REPEAT_TITLES[repeat]})\n\n${escapeHtml(text)}\n\n` +
+  `<i>наступне — ${escapeHtml(when)}</i>`;
+
+export const REMINDER_LABEL = (when: string, text: string, repeat?: RepeatKind) =>
+  `${when}${repeat ? ` ${REPEAT_TITLES[repeat]}` : ""} — ${text}`;
 
 export const AUTO_REMIND_ON =
   "⏰ Тепер створюю нагадування без команди.\n\n" +
@@ -174,6 +191,43 @@ export const REMINDERS_HEADER = (count: number) =>
 export const REMINDER_DELETED = "🗑 Прибрано.";
 
 export const REMINDER_FIRES = (text: string) => `⏰ <b>Нагадування</b>\n\n${escapeHtml(text)}`;
+
+// ── Витрати ──────────────────────────────────────────────────────────────────
+
+const money = (value: number) => `$${value.toFixed(2)}`;
+
+export const USAGE = (spent: number, granted: number) => {
+  const left = granted - spent;
+  const lines = [
+    "<b>Витрати OpenRouter</b>",
+    "",
+    `Витрачено: ${money(spent)}`,
+  ];
+  if (granted > 0) {
+    lines.push(`Поповнено: ${money(granted)}`, `<b>Залишок: ${money(left)}</b>`);
+    if (left <= 1) {
+      lines.push("", "⚠️ Залишок малий — варто поповнити на openrouter.ai/credits");
+    }
+  } else {
+    lines.push("", "Ліміт не заданий, тож залишок порахувати нема від чого.");
+  }
+  lines.push("", "<i>Розпізнавання через Groq тут не враховане — воно окремо.</i>");
+  return lines.join("\n");
+};
+
+export const USAGE_FAILED = (reason: string) =>
+  `⚠️ Не вдалося дізнатися витрати.\n\n<code>${escapeHtml(reason)}</code>`;
+
+// ── Таблиця ──────────────────────────────────────────────────────────────────
+
+export const CSV_BUTTON = "📊 Таблицею для Excel";
+export const CSV_HINT = "Перенести зчитане в таблицю?";
+export const CSV_BUILDING = "📊 Складаю таблицю…";
+export const CSV_CAPTION = "Відкривається в Excel подвійним кліком.";
+export const CSV_NOTHING =
+  "Немає що переносити в таблицю. Спершу надішли знімок документа.";
+export const CSV_FAILED = (reason: string) =>
+  `⚠️ Не вдалося скласти таблицю.\n\n<code>${escapeHtml(reason)}</code>`;
 
 export const STT_PICK = (current: string) =>
   `<b>Рушій розпізнавання мови</b>\n\nЗараз: ${escapeHtml(current)}`;

@@ -9,7 +9,13 @@ import {
   providersKeyboard,
   stylesKeyboard,
 } from "../keyboards";
-import { listModels, modelExists, searchModels } from "../openrouter";
+import {
+  OpenRouterError,
+  fetchCredits,
+  listModels,
+  modelExists,
+  searchModels,
+} from "../openrouter";
 import {
   MAX_PER_USER,
   ReminderError,
@@ -38,6 +44,7 @@ export const COMMANDS = [
   { command: "remind", description: "Створити нагадування" },
   { command: "reminders", description: "Список нагадувань" },
   { command: "autoremind", description: "Нагадування без команди" },
+  { command: "usage", description: "Витрати на OpenRouter" },
   { command: "glossary", description: "Імена й терміни" },
   { command: "prompt", description: "Додаткові побажання" },
   { command: "reset", description: "Скинути налаштування" },
@@ -129,6 +136,17 @@ export async function handleCommand(
         next ? texts.AUTO_REMIND_ON : texts.AUTO_REMIND_OFF,
         html,
       );
+      return;
+    }
+
+    case "usage": {
+      try {
+        const { spent, granted } = await fetchCredits(env);
+        await tg.sendMessage(chatId, texts.USAGE(spent, granted), html);
+      } catch (error) {
+        const reason = error instanceof OpenRouterError ? error.message : String(error);
+        await tg.sendMessage(chatId, texts.USAGE_FAILED(reason), html);
+      }
       return;
     }
 
@@ -343,14 +361,15 @@ async function handleRemind(
 
   const user = await loadSettings(env, userId);
   try {
-    const { dueAt, what } = await planReminder(env, user, source);
-    await saveReminder(env, userId, chatId, what, dueAt);
+    const { dueAt, what, repeat } = await planReminder(env, user, source);
+    await saveReminder(env, userId, chatId, what, dueAt, repeat);
     await tg.sendMessage(
       chatId,
       texts.REMIND_SAVED(
         what,
         formatLocal(new Date(dueAt), env.TIMEZONE || DEFAULT_TIMEZONE),
         fromHistory,
+        repeat,
       ),
       { html: true },
     );
@@ -381,10 +400,13 @@ async function handleReminders(
     keyboard: {
       inline_keyboard: reminders.map((reminder) => [
         {
-          text: `${formatLocal(new Date(reminder.dueAt), timeZone)} — ${reminder.text}`.slice(
-            0,
-            60,
-          ),
+          text: texts
+            .REMINDER_LABEL(
+              formatLocal(new Date(reminder.dueAt), timeZone),
+              reminder.text,
+              reminder.repeat,
+            )
+            .slice(0, 60),
           callback_data: PREFIX.reminderDelete + keyTail(reminder.key),
         },
       ]),

@@ -4,6 +4,7 @@ import type { Env } from "./env";
 import { OpenRouterError, complete, stripWrapper } from "./openrouter";
 import { buildReminderPrompt } from "./prompts";
 import type { UserSettings } from "./settings";
+import { type RepeatKind, isRepeatKind } from "./recurrence";
 import { DEFAULT_TIMEZONE, formatLocal, localNow, zonedToUtc } from "./timezone";
 
 export class ReminderError extends Error {}
@@ -14,6 +15,14 @@ export interface Reminder {
   chatId: number;
   text: string;
   dueAt: number;
+  /** Порожньо — одноразове нагадування. */
+  repeat?: RepeatKind;
+}
+
+interface StoredReminder {
+  chatId: number;
+  text: string;
+  repeat?: RepeatKind;
 }
 
 /** Скільки нагадувань може висіти на одного користувача. */
@@ -91,6 +100,7 @@ export function looksLikeReminder(text: string): boolean {
 interface ParsedReminder {
   when: string;
   what: string;
+  repeat?: RepeatKind;
 }
 
 export function parseReminderReply(raw: string): ParsedReminder {
@@ -101,7 +111,7 @@ export function parseReminderReply(raw: string): ParsedReminder {
     throw new ReminderError("Не вдалося зрозуміти, коли нагадати.");
   }
 
-  let payload: { when?: string; what?: string; error?: string };
+  let payload: { when?: string; what?: string; repeat?: unknown; error?: string };
   try {
     payload = JSON.parse(cleaned.slice(start, end + 1));
   } catch {
@@ -112,7 +122,12 @@ export function parseReminderReply(raw: string): ParsedReminder {
   if (!payload.when || !payload.what) {
     throw new ReminderError("Не вдалося зрозуміти, коли нагадати і про що.");
   }
-  return { when: payload.when, what: payload.what };
+  return {
+    when: payload.when,
+    what: payload.what,
+    // Невідоме значення трактуємо як «без повтору», а не як помилку.
+    ...(isRepeatKind(payload.repeat) ? { repeat: payload.repeat } : {}),
+  };
 }
 
 export async function planReminder(
@@ -120,7 +135,7 @@ export async function planReminder(
   user: UserSettings,
   text: string,
   now: Date = new Date(),
-): Promise<{ dueAt: number; what: string }> {
+): Promise<{ dueAt: number; what: string; repeat?: RepeatKind }> {
   const timeZone = env.TIMEZONE || DEFAULT_TIMEZONE;
   const { stamp, weekday } = localNow(now, timeZone);
 
@@ -149,7 +164,11 @@ export async function planReminder(
       `Цей час уже минув: ${formatLocal(due, timeZone)}. Уточни, коли саме нагадати.`,
     );
   }
-  return { dueAt: due.getTime(), what: parsed.what };
+  return {
+    dueAt: due.getTime(),
+    what: parsed.what,
+    ...(parsed.repeat ? { repeat: parsed.repeat } : {}),
+  };
 }
 
 // ── Сховище ──────────────────────────────────────────────────────────────────
@@ -160,10 +179,12 @@ export async function saveReminder(
   chatId: number,
   text: string,
   dueAt: number,
+  repeat?: RepeatKind,
 ): Promise<string> {
   const salt = Math.random().toString(36).slice(2, 8);
   const key = reminderKey(userId, dueAt, salt);
-  await env.SETTINGS.put(key, JSON.stringify({ chatId, text }), {
+  const value: StoredReminder = { chatId, text, ...(repeat ? { repeat } : {}) };
+  await env.SETTINGS.put(key, JSON.stringify(value), {
     // Прибираємо себе через добу після спрацювання, щоб KV не заростав.
     expirationTtl: Math.max(60, Math.ceil((dueAt - Date.now()) / 1000) + 86_400),
   });
@@ -177,10 +198,7 @@ export async function listReminders(env: Env, userId: number): Promise<Reminder[
   for (const entry of listed.keys) {
     const meta = parseKey(entry.name);
     if (!meta) continue;
-    const value = await env.SETTINGS.get<{ chatId: number; text: string }>(
-      entry.name,
-      "json",
-    );
+    const value = await env.SETTINGS.get<StoredReminder>(entry.name, "json");
     if (!value) continue;
     reminders.push({
       key: entry.name,
@@ -188,6 +206,7 @@ export async function listReminders(env: Env, userId: number): Promise<Reminder[
       chatId: value.chatId,
       text: value.text,
       dueAt: meta.dueAt,
+      ...(isRepeatKind(value.repeat) ? { repeat: value.repeat } : {}),
     });
   }
 
@@ -207,10 +226,7 @@ export async function dueReminders(env: Env, now: number): Promise<Reminder[]> {
     const meta = parseKey(entry.name);
     if (!meta || meta.dueAt > now) continue;
 
-    const value = await env.SETTINGS.get<{ chatId: number; text: string }>(
-      entry.name,
-      "json",
-    );
+    const value = await env.SETTINGS.get<StoredReminder>(entry.name, "json");
     if (!value) continue;
     due.push({
       key: entry.name,
@@ -218,6 +234,7 @@ export async function dueReminders(env: Env, now: number): Promise<Reminder[]> {
       chatId: value.chatId,
       text: value.text,
       dueAt: meta.dueAt,
+      ...(isRepeatKind(value.repeat) ? { repeat: value.repeat } : {}),
     });
   }
 
@@ -231,7 +248,7 @@ export async function createReminder(
   userId: number,
   chatId: number,
   text: string,
-): Promise<{ key: string; dueAt: number; what: string }> {
+): Promise<{ key: string; dueAt: number; what: string; repeat?: RepeatKind }> {
   const existing = await listReminders(env, userId);
   if (existing.length >= MAX_PER_USER) {
     throw new ReminderError(
@@ -239,7 +256,7 @@ export async function createReminder(
     );
   }
 
-  const { dueAt, what } = await planReminder(env, user, text);
-  const key = await saveReminder(env, userId, chatId, what, dueAt);
-  return { key, dueAt, what };
+  const { dueAt, what, repeat } = await planReminder(env, user, text);
+  const key = await saveReminder(env, userId, chatId, what, dueAt, repeat);
+  return { key, dueAt, what, ...(repeat ? { repeat } : {}) };
 }
