@@ -105,6 +105,39 @@ export async function loadLastTranscript(env: Env, userId: number): Promise<stri
   return (await env.SETTINGS.get(`last:${userId}`)) ?? "";
 }
 
+/**
+ * Останній прогін: що саме обробляли і чим. Потрібен, щоб перепрогнати той
+ * самий запис іншою моделлю чи стилем — file_id у Telegram лишається
+ * дійсним, тож аудіо й знімок можна завантажити повторно.
+ */
+export interface LastJob {
+  kind: "voice" | "photo";
+  fileId: string;
+  fileName?: string;
+  mimeType?: string;
+  caption?: string;
+  /** Сирий результат розпізнавання — дозволяє не платити за STT удруге. */
+  transcript?: string;
+}
+
+export async function saveLastJob(
+  env: Env,
+  userId: number,
+  job: LastJob,
+): Promise<void> {
+  await env.SETTINGS.put(`job:${userId}`, JSON.stringify(job), {
+    expirationTtl: LAST_TTL_SECONDS,
+  });
+}
+
+export async function loadLastJob(env: Env, userId: number): Promise<LastJob | null> {
+  const job = await env.SETTINGS.get<LastJob>(`job:${userId}`, "json");
+  if (!job || (job.kind !== "voice" && job.kind !== "photo") || !job.fileId) {
+    return null;
+  }
+  return job;
+}
+
 /** Останній зчитаний із фото документ — джерело для вивантаження в таблицю. */
 export async function saveLastDocument(
   env: Env,

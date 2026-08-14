@@ -226,6 +226,18 @@ export const USAGE_FAILED = (reason: string) =>
 
 export const CSV_BUTTON = "📊 Таблицею для Excel";
 export const CSV_HINT = "Перенести зчитане в таблицю?";
+
+// ── Повторний прогін ─────────────────────────────────────────────────────────
+
+export const REDO_HINT = "Не влаштовує результат?";
+export const REDO_RUNNING = "Переробляю…";
+export const REDO_PICK_MODEL = "Обери модель — і я одразу перероблю цей запис:";
+export const REDO_PICK_STYLE = "Обери стиль — і я одразу перероблю цей запис:";
+export const REDO_PICK_VISION = "Обери модель — і я перечитаю цей знімок:";
+export const REDO_NOTHING =
+  "Немає чого переробляти. Надішли голосове або знімок.";
+export const REDO_NO_AUDIO =
+  "Це був знімок, а не запис — перерозпізнавати нема чого.";
 export const CSV_BUILDING = "📊 Складаю таблицю…";
 export const CSV_CAPTION = "Відкривається в Excel подвійним кліком.";
 export const CSV_NOTHING =

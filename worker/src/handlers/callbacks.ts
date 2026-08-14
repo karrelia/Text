@@ -1,12 +1,23 @@
 /** Обробка натискань на інлайн-кнопки. */
 
 import { type Env, PROVIDER_TITLES, apiKeyFor, defaultSttModel, isSttProvider } from "../env";
-import { PREFIX } from "../keyboards";
-import { deleteReminder, keyFromTail } from "../reminders";
-import { OpenRouterError, toCsv } from "../openrouter";
-import { loadLastDocument } from "../settings";
+import {
+  PREFIX,
+  PRESET_LLM_MODELS,
+  PRESET_VISION_MODELS,
+  modelsKeyboard,
+  stylesKeyboard,
+} from "../keyboards";
+import { OpenRouterError, searchModels, toCsv } from "../openrouter";
+import { runPhoto, runVoice } from "../pipeline";
 import { STYLES } from "../prompts";
-import { loadSettings, updateSettings } from "../settings";
+import { deleteReminder, keyFromTail } from "../reminders";
+import {
+  loadLastDocument,
+  loadLastJob,
+  loadSettings,
+  updateSettings,
+} from "../settings";
 import type { TelegramClient, TgCallbackQuery } from "../telegram";
 import * as texts from "../texts";
 
@@ -31,6 +42,42 @@ export async function handleCallback(
     await updateSettings(env, userId, { llmModel: model });
     await tg.answerCallback(query.id, "Збережено");
     await edit(`${texts.SETTINGS_SAVED} Модель: <code>${texts.escapeHtml(model)}</code>`);
+    return;
+  }
+
+  if (data.startsWith(PREFIX.redoOpen)) {
+    await openRedoPicker(env, tg, query, userId, chatId, data.slice(PREFIX.redoOpen.length));
+    return;
+  }
+
+  if (data.startsWith(PREFIX.redoModel)) {
+    await redo(env, tg, query, userId, chatId, {
+      llmModel: data.slice(PREFIX.redoModel.length),
+    });
+    return;
+  }
+
+  if (data.startsWith(PREFIX.redoStyle)) {
+    const style = data.slice(PREFIX.redoStyle.length);
+    if (!(style in STYLES)) {
+      await tg.answerCallback(query.id, texts.STALE_CHOICE, true);
+      return;
+    }
+    await redo(env, tg, query, userId, chatId, { style });
+    return;
+  }
+
+  if (data.startsWith(PREFIX.redoVision)) {
+    await redo(env, tg, query, userId, chatId, {
+      visionModel: data.slice(PREFIX.redoVision.length),
+    });
+    return;
+  }
+
+  if (data.startsWith(PREFIX.redoStt)) {
+    // Наново з аудіо: рушій розпізнавання міг змінитись, тож збережений
+    // транскрипт більше не відповідає налаштуванням.
+    await redo(env, tg, query, userId, chatId, {}, { fresh: true });
     return;
   }
 
@@ -130,4 +177,98 @@ async function handleCsv(
     const reason = error instanceof OpenRouterError ? error.message : String(error);
     await tg.sendMessage(chatId, texts.CSV_FAILED(reason), { html: true });
   }
+}
+
+// ── Повторний прогін ─────────────────────────────────────────────────────────
+
+/** Показує перелік моделей або стилів, вибір з якого одразу переробляє запис. */
+async function openRedoPicker(
+  env: Env,
+  tg: TelegramClient,
+  query: TgCallbackQuery,
+  userId: number,
+  chatId: number | undefined,
+  kind: string,
+): Promise<void> {
+  if (chatId === undefined) {
+    await tg.answerCallback(query.id, texts.STALE_CHOICE, true);
+    return;
+  }
+
+  const job = await loadLastJob(env, userId);
+  if (!job) {
+    await tg.answerCallback(query.id, texts.REDO_NOTHING, true);
+    return;
+  }
+
+  const user = await loadSettings(env, userId);
+  await tg.answerCallback(query.id);
+
+  if (kind === "s") {
+    await tg.sendMessage(chatId, texts.REDO_PICK_STYLE, {
+      keyboard: stylesKeyboard(user.style, PREFIX.redoStyle),
+    });
+    return;
+  }
+
+  if (kind === "v") {
+    const found = await searchModels(env, "", { imageOnly: true, limit: 8 });
+    const models = found.length > 0 ? found.map((m) => m.id) : PRESET_VISION_MODELS;
+    await tg.sendMessage(chatId, texts.REDO_PICK_VISION, {
+      keyboard: modelsKeyboard(models, user.visionModel, PREFIX.redoVision),
+    });
+    return;
+  }
+
+  await tg.sendMessage(chatId, texts.REDO_PICK_MODEL, {
+    keyboard: modelsKeyboard(PRESET_LLM_MODELS, user.llmModel, PREFIX.redoModel),
+  });
+}
+
+/**
+ * Зберігає вибір і одразу переганяє той самий запис.
+ *
+ * Для голосового транскрипт беремо збережений — розпізнавати вдруге нема
+ * сенсу, поки не змінився рушій STT. Кнопка «Перерозпізнати» просить
+ * свіжий прогін явно.
+ */
+async function redo(
+  env: Env,
+  tg: TelegramClient,
+  query: TgCallbackQuery,
+  userId: number,
+  chatId: number | undefined,
+  patch: Parameters<typeof updateSettings>[2],
+  options: { fresh?: boolean } = {},
+): Promise<void> {
+  if (chatId === undefined) {
+    await tg.answerCallback(query.id, texts.STALE_CHOICE, true);
+    return;
+  }
+
+  const job = await loadLastJob(env, userId);
+  if (!job) {
+    await tg.answerCallback(query.id, texts.REDO_NOTHING, true);
+    return;
+  }
+
+  if (options.fresh && job.kind !== "voice") {
+    await tg.answerCallback(query.id, texts.REDO_NO_AUDIO, true);
+    return;
+  }
+
+  if (Object.keys(patch).length > 0) {
+    await updateSettings(env, userId, patch);
+  }
+  await tg.answerCallback(query.id, texts.REDO_RUNNING);
+
+  if (job.kind === "photo") {
+    await runPhoto(env, tg, chatId, userId, job);
+    return;
+  }
+
+  await runVoice(env, tg, chatId, userId, {
+    ...job,
+    ...(options.fresh ? { transcript: "" } : {}),
+  });
 }

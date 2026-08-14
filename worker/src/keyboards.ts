@@ -19,6 +19,12 @@ export const PREFIX = {
   provider: "p:",
   reminderDelete: "rd:",
   csv: "csv:",
+  /** Відкрити перелік для повторного прогону: "m" — модель, "s" — стиль, "v" — фото. */
+  redoOpen: "ro:",
+  redoModel: "rm:",
+  redoStyle: "rs:",
+  redoVision: "rv:",
+  redoStt: "rt:",
 } as const;
 
 export const PRESET_LLM_MODELS = [
@@ -71,14 +77,40 @@ export function providersKeyboard(env: Env, current: string): InlineKeyboard {
   };
 }
 
-export function stylesKeyboard(current: string): InlineKeyboard {
+export function stylesKeyboard(
+  current: string,
+  prefix: string = PREFIX.style,
+): InlineKeyboard {
   return {
     inline_keyboard: Object.entries(STYLES).map(([key, style]) => [
       {
         text: `${key === current ? "✅ " : ""}${style.title}`,
-        callback_data: PREFIX.style + key,
+        callback_data: prefix + key,
       },
     ]),
+  };
+}
+
+/** Кнопки під розшифровкою: перепрогнати іншою моделлю, стилем або наново. */
+export function voiceResultKeyboard(): InlineKeyboard {
+  return {
+    inline_keyboard: [
+      [
+        { text: "🔁 Інша модель", callback_data: `${PREFIX.redoOpen}m` },
+        { text: "✍️ Інший стиль", callback_data: `${PREFIX.redoOpen}s` },
+      ],
+      [{ text: "🎧 Перерозпізнати", callback_data: PREFIX.redoStt }],
+    ],
+  };
+}
+
+/** Кнопки під зчитаним знімком. */
+export function photoResultKeyboard(csvLabel: string): InlineKeyboard {
+  return {
+    inline_keyboard: [
+      [{ text: "🔁 Інша модель", callback_data: `${PREFIX.redoOpen}v` }],
+      [{ text: csvLabel, callback_data: `${PREFIX.csv}last` }],
+    ],
   };
 }
 
@@ -89,9 +121,4 @@ export function reminderKeyboard(tail: string): InlineKeyboard {
       [{ text: "🗑 Прибрати", callback_data: PREFIX.reminderDelete + tail }],
     ],
   };
-}
-
-/** Кнопка «у таблицю» під зчитаним документом. */
-export function csvKeyboard(label: string): InlineKeyboard {
-  return { inline_keyboard: [[{ text: label, callback_data: `${PREFIX.csv}last` }]] };
 }

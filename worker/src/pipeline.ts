@@ -1,6 +1,7 @@
 /** Головні сценарії: голосове → чистий текст, фото → зчитаний текст. */
 
 import { type Env, numberVar } from "./env";
+import { photoResultKeyboard, reminderKeyboard, voiceResultKeyboard } from "./keyboards";
 import { OpenRouterError, processTranscript } from "./openrouter";
 import { buildWhisperHint, styleKind } from "./prompts";
 import {
@@ -9,7 +10,13 @@ import {
   keyTail,
   reminderIntent,
 } from "./reminders";
-import { loadSettings, saveLastDocument, saveLastTranscript } from "./settings";
+import {
+  type LastJob,
+  loadSettings,
+  saveLastDocument,
+  saveLastJob,
+  saveLastTranscript,
+} from "./settings";
 import { TranscriptionError, transcribe } from "./stt";
 import {
   DOWNLOAD_LIMIT,
@@ -21,9 +28,10 @@ import {
   extractPhoto,
 } from "./telegram";
 import * as texts from "./texts";
-import { csvKeyboard, reminderKeyboard } from "./keyboards";
 import { DEFAULT_TIMEZONE, formatLocal } from "./timezone";
 import { readPhoto } from "./vision";
+
+// ── Голосове ─────────────────────────────────────────────────────────────────
 
 export async function handleAudioMessage(
   env: Env,
@@ -52,23 +60,52 @@ export async function handleAudioMessage(
     return;
   }
 
-  const status = await tg.sendMessage(chatId, texts.STATUS_TRANSCRIBING);
+  await runVoice(env, tg, chatId, userId, {
+    kind: "voice",
+    fileId: audio.file_id,
+    fileName: audio.file_name ?? "",
+  });
+}
+
+/**
+ * Прогін голосового: розпізнавання (за потреби) і обробка тексту.
+ *
+ * `job.transcript` дозволяє перепрогнати лише обробку — коли змінилася
+ * модель редагування чи стиль, розпізнавати вдруге нема сенсу: це зайві
+ * гроші й секунди, а результат STT той самий.
+ */
+export async function runVoice(
+  env: Env,
+  tg: TelegramClient,
+  chatId: number,
+  userId: number,
+  job: LastJob,
+): Promise<void> {
+  const reusing = Boolean(job.transcript?.trim());
+  const status = await tg.sendMessage(
+    chatId,
+    reusing ? texts.STATUS_CLEANING : texts.STATUS_TRANSCRIBING,
+  );
   await tg.sendChatAction(chatId).catch(() => undefined);
 
   let cleaned: string;
   let spoken = "";
+  let transcript = job.transcript ?? "";
+
   try {
     const user = await loadSettings(env, userId);
-    const file = await tg.downloadFile(audio.file_id);
 
-    const transcript = await transcribe(
-      env,
-      user.sttProvider,
-      user.sttModel,
-      file.body,
-      audio.file_name || file.name,
-      buildWhisperHint(user.glossary),
-    );
+    if (!reusing) {
+      const file = await tg.downloadFile(job.fileId);
+      transcript = await transcribe(
+        env,
+        user.sttProvider,
+        user.sttModel,
+        file.body,
+        job.fileName || file.name,
+        buildWhisperHint(user.glossary),
+      );
+    }
 
     if (!transcript.trim()) {
       await tg.editMessage(chatId, status.message_id, texts.EMPTY_RESULT);
@@ -88,6 +125,7 @@ export async function handleAudioMessage(
     // пам'яті, і для нагадувань беремо саме мовлення.
     spoken = styleKind(user.style) === "generate" ? transcript : cleaned;
     await saveLastTranscript(env, userId, spoken);
+    await saveLastJob(env, userId, { ...job, transcript });
   } catch (error) {
     await tg.editMessage(chatId, status.message_id, describe(error), { html: true });
     return;
@@ -104,8 +142,83 @@ export async function handleAudioMessage(
     await tg.sendMessage(chatId, part);
   }
 
+  await tg.sendMessage(chatId, texts.REDO_HINT, { keyboard: voiceResultKeyboard() });
   await maybeRemind(env, tg, chatId, userId, spoken);
 }
+
+// ── Фото ─────────────────────────────────────────────────────────────────────
+
+export async function handlePhotoMessage(
+  env: Env,
+  tg: TelegramClient,
+  message: TgMessage,
+  userId: number,
+): Promise<void> {
+  const chatId = message.chat.id;
+  const photo = extractPhoto(message);
+  if (!photo) return;
+
+  if (photo.file_size && photo.file_size > DOWNLOAD_LIMIT) {
+    await tg.sendMessage(chatId, texts.ERROR_TOO_BIG);
+    return;
+  }
+
+  await runPhoto(env, tg, chatId, userId, {
+    kind: "photo",
+    fileId: photo.file_id,
+    mimeType: photo.mime_type ?? "image/jpeg",
+    caption: message.caption ?? "",
+  });
+}
+
+/** Прогін знімка. Перечитати іншою моделлю можна тим самим викликом. */
+export async function runPhoto(
+  env: Env,
+  tg: TelegramClient,
+  chatId: number,
+  userId: number,
+  job: LastJob,
+): Promise<void> {
+  const status = await tg.sendMessage(chatId, texts.STATUS_READING_PHOTO);
+  await tg.sendChatAction(chatId).catch(() => undefined);
+
+  let text: string;
+  try {
+    const user = await loadSettings(env, userId);
+    const file = await tg.downloadFile(job.fileId);
+    text = await readPhoto(
+      env,
+      file.body,
+      job.mimeType || "image/jpeg",
+      user,
+      job.caption ?? "",
+    );
+  } catch (error) {
+    await tg.editMessage(chatId, status.message_id, describe(error), { html: true });
+    return;
+  }
+
+  const parts = texts.splitForTelegram(text, MESSAGE_LIMIT);
+  if (parts.length === 0) {
+    await tg.editMessage(chatId, status.message_id, texts.EMPTY_PHOTO);
+    return;
+  }
+
+  await tg.editMessage(chatId, status.message_id, parts[0]!);
+  for (const part of parts.slice(1)) {
+    await tg.sendMessage(chatId, part);
+  }
+
+  // Зчитане лишається під рукою: одна кнопка перечитає іншою моделлю,
+  // друга перенесе в таблицю для Excel.
+  await saveLastDocument(env, userId, text);
+  await saveLastJob(env, userId, job);
+  await tg.sendMessage(chatId, texts.REDO_HINT, {
+    keyboard: photoResultKeyboard(texts.CSV_BUTTON),
+  });
+}
+
+// ── Нагадування без команди ──────────────────────────────────────────────────
 
 /**
  * Створює нагадування, якщо сказане на нього схоже.
@@ -174,57 +287,4 @@ function describe(error: unknown): string {
   }
   console.error("Несподівана помилка обробки запису", error);
   return texts.ERROR_GENERIC(String(error));
-}
-
-/** Фото → текст. Підпис під знімком стає окремою вказівкою моделі. */
-export async function handlePhotoMessage(
-  env: Env,
-  tg: TelegramClient,
-  message: TgMessage,
-  userId: number,
-): Promise<void> {
-  const chatId = message.chat.id;
-  const photo = extractPhoto(message);
-  if (!photo) return;
-
-  if (photo.file_size && photo.file_size > DOWNLOAD_LIMIT) {
-    await tg.sendMessage(chatId, texts.ERROR_TOO_BIG);
-    return;
-  }
-
-  const status = await tg.sendMessage(chatId, texts.STATUS_READING_PHOTO);
-  await tg.sendChatAction(chatId).catch(() => undefined);
-
-  let text: string;
-  try {
-    const user = await loadSettings(env, userId);
-    const file = await tg.downloadFile(photo.file_id);
-    text = await readPhoto(
-      env,
-      file.body,
-      photo.mime_type || "image/jpeg",
-      user,
-      message.caption ?? "",
-    );
-  } catch (error) {
-    await tg.editMessage(chatId, status.message_id, describe(error), { html: true });
-    return;
-  }
-
-  const parts = texts.splitForTelegram(text, MESSAGE_LIMIT);
-  if (parts.length === 0) {
-    await tg.editMessage(chatId, status.message_id, texts.EMPTY_PHOTO);
-    return;
-  }
-
-  await tg.editMessage(chatId, status.message_id, parts[0]!);
-  for (const part of parts.slice(1)) {
-    await tg.sendMessage(chatId, part);
-  }
-
-  // Зчитане лишається під рукою: кнопка перенесе його в таблицю для Excel.
-  await saveLastDocument(env, userId, text);
-  await tg.sendMessage(chatId, texts.CSV_HINT, {
-    keyboard: csvKeyboard(texts.CSV_BUTTON),
-  });
 }
