@@ -18,6 +18,7 @@ export const PREFIX = {
   style: "s:",
   provider: "p:",
   reminderDelete: "rd:",
+  reminderUndo: "ru:",
   csv: "csv:",
   /**
    * Відкрити перелік для повторного прогону: "m" — модель, "s" — стиль,
@@ -143,4 +144,28 @@ export function reminderKeyboard(tail: string): InlineKeyboard {
       [{ text: "🗑 Прибрати", callback_data: PREFIX.reminderDelete + tail }],
     ],
   };
+}
+
+/**
+ * Кнопки до списку нагадувань: по одній на запис, підписані номером із
+ * тексту. Самі рядки списку кнопками не роблимо — тицяння в них колись
+ * знищувало нагадування замість того, щоб показати його повністю.
+ */
+export function remindersKeyboard(
+  tails: string[],
+  undoLabel?: string,
+): InlineKeyboard {
+  const rows: InlineKeyboard["inline_keyboard"] = [];
+  for (let index = 0; index < tails.length; index += 4) {
+    rows.push(
+      tails.slice(index, index + 4).map((tail, offset) => ({
+        text: `🗑 ${index + offset + 1}`,
+        callback_data: PREFIX.reminderDelete + tail,
+      })),
+    );
+  }
+  if (undoLabel) {
+    rows.push([{ text: undoLabel, callback_data: PREFIX.reminderUndo }]);
+  }
+  return { inline_keyboard: rows };
 }

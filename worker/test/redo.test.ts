@@ -89,6 +89,7 @@ function fakeTelegram() {
         if (text) alerts.push(text);
       }),
       sendChatAction: vi.fn(async () => undefined),
+      deleteMessage: vi.fn(async () => undefined),
       downloadFile: vi.fn(async () => ({
         body: new Response("audio"),
         name: "voice.ogg",

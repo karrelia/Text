@@ -90,8 +90,14 @@ export const GLOSSARY_HELP = (current: string) =>
   "звучать у твоїх записах — я писатиму їх правильно.\n\n" +
   "Приклад:\n" +
   "<code>/glossary Кириленко, ТОВ «Миргородводоканал», Kubernetes</code>\n\n" +
-  "Очистити: <code>/glossary -</code>\n\n" +
+  "Дописати, не чіпаючи решти: <code>/glossary + Кірпосенко</code>\n" +
+  "Прибрати одне: <code>/glossary - Кірпосенко</code>\n" +
+  "Очистити все: <code>/glossary -</code>\n\n" +
   `Зараз: ${current}`;
+
+export const LIST_NOT_FOUND = (term: string) =>
+  `Не знайшов у списку: <code>${escapeHtml(term)}</code>\n\n` +
+  "Перевір написання — прибираю лише те, що збігається повністю.";
 
 export const PROMPT_HELP = (current: string) =>
   "<b>Додаткові побажання</b>\n\n" +
@@ -99,6 +105,7 @@ export const PROMPT_HELP = (current: string) =>
   "стандартних правил.\n\n" +
   "Приклад:\n" +
   "<code>/prompt Оформлюй списки маркерами</code>\n\n" +
+  "Дописати: <code>/prompt + Скорочення розкривай</code>\n" +
   "Очистити: <code>/prompt -</code>\n\n" +
   `Зараз: ${current}`;
 
@@ -168,9 +175,6 @@ export const REMINDER_FIRES_REPEAT = (text: string, when: string, repeat: Repeat
   `⏰ <b>Нагадування</b> (${repeatTitle(repeat)})\n\n${escapeHtml(text)}\n\n` +
   `<i>наступне — ${escapeHtml(when)}</i>`;
 
-export const REMINDER_LABEL = (when: string, text: string, repeat?: Repeat) =>
-  `${when}${repeat ? ` ${repeatTitle(repeat)}` : ""} — ${text}`;
-
 export const AUTO_REMIND_ON =
   "⏰ Тепер створюю нагадування без команди.\n\n" +
   "Просто скажи або напиши «нагадай завтра о 9 здати звіт» — або додай " +
@@ -192,10 +196,36 @@ export const REMIND_LIMIT = (max: number) =>
 
 export const REMINDERS_EMPTY = "📭 Нагадувань немає. Створити — /remind";
 
+/**
+ * Список нагадувань текстом, а кнопки — окремо, з номерами.
+ *
+ * Раніше кожен рядок сам був кнопкою «прибрати»: дотик, щоб роздивитися
+ * обрізаний текст, мовчки знищував запис. Тепер текст видно повністю й
+ * нікуди не треба тикати, щоб його прочитати.
+ */
 export const REMINDERS_HEADER = (count: number) =>
-  `<b>Найближчі нагадування (${count})</b>\n\nНатисни, щоб прибрати:`;
+  `<b>Найближчі нагадування (${count})</b>`;
+
+export const renderReminders = (
+  items: { when: string; text: string; repeat?: Repeat }[],
+): string =>
+  [
+    REMINDERS_HEADER(items.length),
+    "",
+    ...items.map(
+      (item, index) =>
+        `${index + 1}. <b>${escapeHtml(item.when)}</b>` +
+        `${item.repeat ? ` · ${repeatTitle(item.repeat)}` : ""}\n` +
+        `    ${escapeHtml(item.text)}`,
+    ),
+    "",
+    "<i>Прибрати — кнопкою з відповідним номером.</i>",
+  ].join("\n");
 
 export const REMINDER_DELETED = "🗑 Прибрано.";
+export const REMINDER_UNDO_BUTTON = "↩️ Повернути";
+export const REMINDER_RESTORED = (when: string) => `↩️ Повернуто на ${escapeHtml(when)}.`;
+export const REMINDER_UNDO_EXPIRED = "Повертати вже нічого — відкотити можна одразу.";
 
 export const REMINDER_FIRES = (text: string) => `⏰ <b>Нагадування</b>\n\n${escapeHtml(text)}`;
 
@@ -226,6 +256,8 @@ export const USAGE_FAILED = (reason: string) =>
   `⚠️ Не вдалося дізнатися витрати.\n\n<code>${escapeHtml(reason)}</code>`;
 
 // ── Таблиця ──────────────────────────────────────────────────────────────────
+
+export const WHOLE_FILE_CAPTION = "Той самий текст одним файлом — зручніше копіювати.";
 
 export const CSV_BUTTON = "📊 Таблицею для Excel";
 export const CSV_HINT = "Перенести зчитане в таблицю?";

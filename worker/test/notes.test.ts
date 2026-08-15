@@ -61,6 +61,7 @@ vi.mock("../src/telegram", async (importOriginal) => {
     }
     async sendChatAction() {}
     async sendDocument() {}
+    async deleteMessage() {}
     async downloadFile(fileId: string) {
       tg.files.push(fileId);
       return { body: new Response("файл"), name: "voice.ogg" };

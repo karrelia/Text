@@ -148,6 +148,7 @@ export async function runVoice(
   for (const part of parts.slice(1)) {
     await tg.sendMessage(chatId, part);
   }
+  await sendWhole(tg, chatId, cleaned, parts.length, "rozshyfrovka");
 
   await tg.sendMessage(chatId, texts.REDO_HINT(note), {
     html: true,
@@ -222,6 +223,7 @@ export async function runPhoto(
   for (const part of parts.slice(1)) {
     await tg.sendMessage(chatId, part);
   }
+  await sendWhole(tg, chatId, text, parts.length, "dokument");
 
   // Зчитане лишається під рукою: одна кнопка перечитає іншою моделлю,
   // друга перенесе в таблицю для Excel.
@@ -231,6 +233,38 @@ export async function runPhoto(
     html: true,
     keyboard: photoResultKeyboard(texts.CSV_BUTTON),
   });
+}
+
+/**
+ * Довгий текст додатково кладемо файлом.
+ *
+ * Щойно відповідь не вміщається в одне повідомлення, Telegram ріже її на
+ * бульбашки — і скопіювати результат цілим стає марудно: на телефоні це
+ * виділення через межі повідомлень. Файл вирішує це одним дотиком, тож
+ * надсилаємо його рівно тоді, коли розрив стався.
+ */
+async function sendWhole(
+  tg: TelegramClient,
+  chatId: number,
+  text: string,
+  parts: number,
+  prefix: string,
+): Promise<void> {
+  if (parts < 2) return;
+  const stamp = new Date().toISOString().slice(0, 10);
+  try {
+    await tg.sendDocument(
+      chatId,
+      `${prefix}-${stamp}.txt`,
+      text,
+      texts.WHOLE_FILE_CAPTION,
+      false,
+      "text/plain",
+    );
+  } catch (error) {
+    // Текст людина вже отримала — через невдалий файл нічого не ламаємо.
+    console.log("Не вдалося надіслати текст файлом", error);
+  }
 }
 
 // ── Повторний прогін ─────────────────────────────────────────────────────────

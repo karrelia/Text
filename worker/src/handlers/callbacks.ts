@@ -12,7 +12,17 @@ import {
 import { OpenRouterError, searchModels, toCsv } from "../openrouter";
 import { type RedoOptions, rerun } from "../pipeline";
 import { PHOTO_TWEAKS, STYLES, TWEAKS, VOICE_TWEAKS } from "../prompts";
-import { deleteReminder, keyFromTail } from "../reminders";
+import { nextAfter } from "../recurrence";
+import {
+  deleteReminder,
+  keyFromTail,
+  loadReminder,
+  saveReminder,
+  stashDeleted,
+  takeDeleted,
+} from "../reminders";
+import { DEFAULT_TIMEZONE, formatLocal } from "../timezone";
+import { renderReminderList } from "./commands";
 import {
   askForNote,
   loadLastDocument,
@@ -114,11 +124,12 @@ export async function handleCallback(
   }
 
   if (data.startsWith(PREFIX.reminderDelete)) {
-    const tail = data.slice(PREFIX.reminderDelete.length);
-    // Ключ складаємо з id того, хто натиснув — чуже нагадування прибрати не вийде.
-    await deleteReminder(env, keyFromTail(userId, tail));
-    await tg.answerCallback(query.id, "Прибрано");
-    await edit(texts.REMINDER_DELETED);
+    await removeReminder(env, tg, query, userId, data.slice(PREFIX.reminderDelete.length));
+    return;
+  }
+
+  if (data.startsWith(PREFIX.reminderUndo)) {
+    await restoreReminder(env, tg, query, userId);
     return;
   }
 
@@ -161,6 +172,81 @@ export async function handleCallback(
   }
 
   await tg.answerCallback(query.id, texts.STALE_CHOICE, true);
+}
+
+// ── Нагадування ──────────────────────────────────────────────────────────────
+
+/**
+ * Прибирає нагадування і одразу перемальовує решту списку, лишаючи кнопку
+ * «Повернути». Прибрати не те — звична помилка, а нагадування нема звідки
+ * відновити: людина вже не пам'ятає, на котру годину воно було.
+ */
+async function removeReminder(
+  env: Env,
+  tg: TelegramClient,
+  query: TgCallbackQuery,
+  userId: number,
+  tail: string,
+): Promise<void> {
+  // Ключ складаємо з id того, хто натиснув — чуже нагадування прибрати не вийде.
+  const key = keyFromTail(userId, tail);
+  const doomed = await loadReminder(env, key);
+  if (doomed) await stashDeleted(env, doomed);
+  await deleteReminder(env, key);
+  await tg.answerCallback(query.id, "Прибрано");
+  await redrawReminders(env, tg, query, userId, texts.REMINDER_DELETED);
+}
+
+async function restoreReminder(
+  env: Env,
+  tg: TelegramClient,
+  query: TgCallbackQuery,
+  userId: number,
+): Promise<void> {
+  const stashed = await takeDeleted(env, userId);
+  if (!stashed) {
+    await tg.answerCallback(query.id, texts.REMINDER_UNDO_EXPIRED, true);
+    return;
+  }
+
+  // Час міг уже минути, поки роздумували, — тоді ставимо наступне за повтором,
+  // а одноразове нагадуємо негайно, бо іншого «коли» в нього немає.
+  const timeZone = env.TIMEZONE || DEFAULT_TIMEZONE;
+  const dueAt =
+    stashed.dueAt > Date.now()
+      ? stashed.dueAt
+      : (stashed.repeat && nextAfter(stashed.dueAt, stashed.repeat, timeZone, Date.now())) ||
+        Date.now();
+
+  await saveReminder(env, userId, stashed.chatId, stashed.text, dueAt, stashed.repeat);
+  await tg.answerCallback(
+    query.id,
+    texts.REMINDER_RESTORED(formatLocal(new Date(dueAt), timeZone)),
+  );
+  await redrawReminders(env, tg, query, userId, texts.REMINDERS_EMPTY);
+}
+
+/** Перемальовує список у тому самому повідомленні. */
+async function redrawReminders(
+  env: Env,
+  tg: TelegramClient,
+  query: TgCallbackQuery,
+  userId: number,
+  whenEmpty: string,
+): Promise<void> {
+  const chatId = query.message?.chat.id;
+  const messageId = query.message?.message_id;
+  if (chatId === undefined || messageId === undefined) return;
+
+  const view = await renderReminderList(env, userId, texts.REMINDER_UNDO_BUTTON);
+  await tg.editMessage(chatId, messageId, view?.text ?? whenEmpty, {
+    html: true,
+    keyboard: view?.keyboard ?? {
+      inline_keyboard: [
+        [{ text: texts.REMINDER_UNDO_BUTTON, callback_data: PREFIX.reminderUndo }],
+      ],
+    },
+  });
 }
 
 /** Переносить останній зчитаний документ у CSV і надсилає файлом. */
@@ -253,6 +339,13 @@ async function openRedoPicker(
 }
 
 /**
+ * Чи прийшло натискання з окремого повідомлення-переліку. Кнопки під самим
+ * результатом (як «Перерозпізнати») сюди не належать — їх прибирати не можна.
+ */
+const PICKERS = [PREFIX.redoModel, PREFIX.redoStyle, PREFIX.redoVision, PREFIX.redoNote];
+const isPicker = (data: string) => PICKERS.some((prefix) => data.startsWith(prefix));
+
+/**
  * Просить написати вказівку своїми словами. Наступне текстове повідомлення
  * стане нею — про це знає маршрутизатор оновлень.
  */
@@ -314,5 +407,13 @@ async function redo(
     await updateSettings(env, userId, patch);
   }
   await tg.answerCallback(query.id, texts.REDO_RUNNING);
+
+  // Перелік своє відпрацював. Лишати його в чаті — засмічувати переписку
+  // мертвими кнопками, які з часом почнуть суперечити налаштуванням.
+  const picker = query.message?.message_id;
+  if (picker !== undefined && isPicker(query.data ?? "")) {
+    await tg.deleteMessage(chatId, picker);
+  }
+
   await rerun(env, tg, chatId, userId, job, options);
 }

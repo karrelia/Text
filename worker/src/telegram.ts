@@ -142,13 +142,16 @@ export class TelegramClient {
     content: string,
     caption?: string,
     withBom = false,
+    mimeType = "text/csv",
   ): Promise<void> {
     const body = new FormData();
     body.append("chat_id", String(chatId));
     if (caption) body.append("caption", caption);
     body.append(
       "document",
-      new Blob([(withBom ? "\uFEFF" : "") + content], { type: "text/csv; charset=utf-8" }),
+      new Blob([(withBom ? "\uFEFF" : "") + content], {
+        type: `${mimeType}; charset=utf-8`,
+      }),
       fileName,
     );
 
@@ -158,6 +161,19 @@ export class TelegramClient {
     );
     if (!response.ok) {
       throw new TelegramError(`sendDocument: Telegram відповів ${response.status}`);
+    }
+  }
+
+  /**
+   * Прибирає своє повідомлення. Telegram дозволяє це протягом 48 годин;
+   * невдачу ковтаємо — перелік кнопок, що затримався в чаті, не привід
+   * зривати обробку.
+   */
+  async deleteMessage(chatId: number, messageId: number): Promise<void> {
+    try {
+      await this.call("deleteMessage", { chat_id: chatId, message_id: messageId });
+    } catch (error) {
+      console.log("Не вдалося прибрати повідомлення", error);
     }
   }
 

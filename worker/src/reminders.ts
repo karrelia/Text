@@ -255,8 +255,62 @@ export async function listReminders(env: Env, userId: number): Promise<Reminder[
   return reminders.sort((a, b) => a.dueAt - b.dueAt);
 }
 
+export async function loadReminder(env: Env, key: string): Promise<Reminder | null> {
+  const meta = parseKey(key);
+  if (!meta) return null;
+  const value = await env.SETTINGS.get<StoredReminder>(key, "json");
+  if (!value) return null;
+  const repeat = parseRepeat(value.repeat);
+  return {
+    key,
+    userId: meta.userId,
+    chatId: value.chatId,
+    text: value.text,
+    dueAt: meta.dueAt,
+    ...(repeat ? { repeat } : {}),
+  };
+}
+
 export async function deleteReminder(env: Env, key: string): Promise<void> {
   await env.SETTINGS.delete(key);
+}
+
+/**
+ * Щойно прибране нагадування — щоб випадковий дотик можна було відкотити.
+ *
+ * Живе п'ять хвилин: помилку помічають одразу, а тримати довше означало б
+ * пропонувати «повернути» те, що людина свідомо прибрала чверть години тому.
+ */
+export interface DeletedReminder {
+  chatId: number;
+  text: string;
+  dueAt: number;
+  repeat?: Repeat;
+}
+
+const UNDO_TTL_SECONDS = 300;
+const undoKey = (userId: number) => `undo:${userId}`;
+
+export async function stashDeleted(env: Env, reminder: Reminder): Promise<void> {
+  const value: DeletedReminder = {
+    chatId: reminder.chatId,
+    text: reminder.text,
+    dueAt: reminder.dueAt,
+    ...(reminder.repeat ? { repeat: reminder.repeat } : {}),
+  };
+  await env.SETTINGS.put(undoKey(reminder.userId), JSON.stringify(value), {
+    expirationTtl: UNDO_TTL_SECONDS,
+  });
+}
+
+export async function takeDeleted(
+  env: Env,
+  userId: number,
+): Promise<DeletedReminder | null> {
+  const value = await env.SETTINGS.get<DeletedReminder>(undoKey(userId), "json");
+  if (!value?.text || typeof value.dueAt !== "number") return null;
+  await env.SETTINGS.delete(undoKey(userId));
+  return value;
 }
 
 /** Нагадування, час яких настав. Ключі відсортовані, тож беремо з початку. */

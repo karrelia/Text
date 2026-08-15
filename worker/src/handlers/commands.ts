@@ -7,6 +7,7 @@ import {
   PRESET_VISION_MODELS,
   modelsKeyboard,
   providersKeyboard,
+  remindersKeyboard,
   stylesKeyboard,
 } from "../keyboards";
 import {
@@ -229,6 +230,48 @@ async function handleModel(
   });
 }
 
+/**
+ * Дописування та вилучення окремих пунктів: `+ Кірпосенко`, `- Кірпосенко`.
+ *
+ * Без цього словник із півтора десятка назв доводилось переписувати цілком
+ * заради однієї нової — найчастіша дрібна морока в щоденному користуванні.
+ * Усе інше, як і раніше, замінює список повністю.
+ */
+export function applyListEdit(
+  current: string,
+  input: string,
+): { value: string; error?: string } {
+  const match = /^([+-])\s*([\s\S]*)$/.exec(input.trim());
+  if (!match) return { value: input };
+
+  const addition = match[1] === "+";
+  const argument = (match[2] ?? "").trim();
+  if (!argument) return { value: input };
+
+  const items = current
+    .split(/[\n,]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (addition) {
+    const fresh = argument
+      .split(/[\n,]+/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .filter(
+        (part) => !items.some((existing) => existing.toLowerCase() === part.toLowerCase()),
+      );
+    return { value: [...items, ...fresh].join(", ") };
+  }
+
+  const needle = argument.toLowerCase();
+  const kept = items.filter((item) => item.toLowerCase() !== needle);
+  if (kept.length === items.length) {
+    return { value: current, error: texts.LIST_NOT_FOUND(argument) };
+  }
+  return { value: kept.join(", ") };
+}
+
 async function handleTextSetting(
   env: Env,
   tg: TelegramClient,
@@ -254,6 +297,14 @@ async function handleTextSetting(
     await tg.sendMessage(chatId, "🧹 Очищено.");
     return;
   }
+
+  const user = await loadSettings(env, userId);
+  const change = applyListEdit(user[field], value);
+  if (change.error) {
+    await tg.sendMessage(chatId, change.error, { html: true });
+    return;
+  }
+  value = change.value;
 
   await updateSettings(env, userId, { [field]: value });
 
@@ -388,28 +439,39 @@ async function handleReminders(
   chatId: number,
   userId: number,
 ): Promise<void> {
-  const reminders = await listReminders(env, userId);
-  if (reminders.length === 0) {
+  const view = await renderReminderList(env, userId);
+  if (!view) {
     await tg.sendMessage(chatId, texts.REMINDERS_EMPTY);
     return;
   }
+  await tg.sendMessage(chatId, view.text, { html: true, keyboard: view.keyboard });
+}
+
+/**
+ * Список як текст плюс кнопки з номерами. Повертає null, коли нагадувань
+ * немає. Використовується і командою, і перемальовуванням після видалення —
+ * прибрали одне, а решта лишається перед очима.
+ */
+export async function renderReminderList(
+  env: Env,
+  userId: number,
+  undoLabel?: string,
+): Promise<{ text: string; keyboard: ReturnType<typeof remindersKeyboard> } | null> {
+  const reminders = await listReminders(env, userId);
+  if (reminders.length === 0) return null;
 
   const timeZone = env.TIMEZONE || DEFAULT_TIMEZONE;
-  await tg.sendMessage(chatId, texts.REMINDERS_HEADER(reminders.length), {
-    html: true,
-    keyboard: {
-      inline_keyboard: reminders.map((reminder) => [
-        {
-          text: texts
-            .REMINDER_LABEL(
-              formatLocal(new Date(reminder.dueAt), timeZone),
-              reminder.text,
-              reminder.repeat,
-            )
-            .slice(0, 60),
-          callback_data: PREFIX.reminderDelete + keyTail(reminder.key),
-        },
-      ]),
-    },
-  });
+  return {
+    text: texts.renderReminders(
+      reminders.map((reminder) => ({
+        when: formatLocal(new Date(reminder.dueAt), timeZone),
+        text: reminder.text,
+        ...(reminder.repeat ? { repeat: reminder.repeat } : {}),
+      })),
+    ),
+    keyboard: remindersKeyboard(
+      reminders.map((reminder) => keyTail(reminder.key)),
+      undoLabel,
+    ),
+  };
 }
