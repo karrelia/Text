@@ -12,6 +12,9 @@ import {
   takeDeleted,
 } from "../src/reminders";
 import type { TgCallbackQuery } from "../src/telegram";
+import { addSpending, spentToday } from "../src/settings";
+import { REDO_HINT } from "../src/texts";
+import { localDay } from "../src/timezone";
 import { applyListEdit } from "../src/handlers/commands";
 import { handleCallback } from "../src/handlers/callbacks";
 
@@ -276,6 +279,55 @@ describe("окремий запис у сховищі", () => {
   it("неіснуючий ключ — це null, а не падіння", async () => {
     expect(await loadReminder(env, "rem:42:000001788000000:zzz")).toBeNull();
     expect(await loadReminder(env, "сміття")).toBeNull();
+  });
+});
+
+// Без цього вибір моделі робиться наосліп: різниця між дешевою та дорогою
+// на одному записі — десятки разів, а видно її лише в підсумку за місяць.
+describe("облік витрат", () => {
+  const DAY = "2026-08-15";
+
+  it("накопичується за добу", async () => {
+    await addSpending(env, USER, DAY, 0.002);
+    await addSpending(env, USER, DAY, 0.003);
+    expect(await spentToday(env, USER, DAY)).toBeCloseTo(0.005, 6);
+  });
+
+  it("дні рахуються окремо", async () => {
+    await addSpending(env, USER, DAY, 0.01);
+    await addSpending(env, USER, "2026-08-16", 0.02);
+    expect(await spentToday(env, USER, DAY)).toBeCloseTo(0.01, 6);
+  });
+
+  it("у кожного свій рахунок", async () => {
+    await addSpending(env, USER, DAY, 0.01);
+    expect(await spentToday(env, 77, DAY)).toBe(0);
+  });
+
+  it("порожній день — це нуль, а не поломка", async () => {
+    expect(await spentToday(env, USER, DAY)).toBe(0);
+  });
+
+  // OpenRouter не для всіх постачальників повертає вартість — нуль не має
+  // ані псувати підсумок, ані створювати запис.
+  it("нульова вартість нічого не змінює", async () => {
+    await addSpending(env, USER, DAY, 0.01);
+    await addSpending(env, USER, DAY, 0);
+    expect(await spentToday(env, USER, DAY)).toBeCloseTo(0.01, 6);
+  });
+
+  it("дрібні суми показуються в центах, більші — в доларах", () => {
+    expect(REDO_HINT("", { now: 0.0004, today: 0.012 })).toContain("0.04¢");
+    expect(REDO_HINT("", { now: 0.02, today: 0.5 })).toContain("$0.020");
+  });
+
+  it("без вартості підпису немає", () => {
+    expect(REDO_HINT("")).not.toContain("¢");
+  });
+
+  it("локальна дата — ключ доби", () => {
+    // 21:30 за Гринвічем у Києві це вже наступний день.
+    expect(localDay(new Date("2026-08-15T21:30:00Z"), "Europe/Kyiv")).toBe("2026-08-16");
   });
 });
 

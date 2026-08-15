@@ -25,12 +25,13 @@ import {
   planReminder,
   saveReminder,
 } from "../reminders";
-import { DEFAULT_TIMEZONE, formatLocal } from "../timezone";
+import { DEFAULT_TIMEZONE, formatLocal, localDay } from "../timezone";
 import { STYLES, selectHintTerms } from "../prompts";
 import {
   loadLastTranscript,
   loadSettings,
   resetSettings,
+  spentToday,
   updateSettings,
 } from "../settings";
 import type { TelegramClient, TgMessage } from "../telegram";
@@ -141,9 +142,14 @@ export async function handleCommand(
     }
 
     case "usage": {
+      const today = await spentToday(
+        env,
+        userId,
+        localDay(new Date(), env.TIMEZONE || DEFAULT_TIMEZONE),
+      );
       try {
         const { spent, granted } = await fetchCredits(env);
-        await tg.sendMessage(chatId, texts.USAGE(spent, granted), html);
+        await tg.sendMessage(chatId, texts.USAGE(spent, granted, today), html);
       } catch (error) {
         const reason = error instanceof OpenRouterError ? error.message : String(error);
         await tg.sendMessage(chatId, texts.USAGE_FAILED(reason), html);

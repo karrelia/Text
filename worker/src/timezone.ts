@@ -93,6 +93,12 @@ export function localParts(
   };
 }
 
+/** Локальна дата як «2026-08-19» — ключ для добових підсумків. */
+export function localDay(date: Date, timeZone: string): string {
+  const parts = partsIn(date, timeZone);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 /** Момент часу → «19.08.2026, 09:00» у зоні користувача. */
 export function formatLocal(date: Date, timeZone: string): string {
   const parts = partsIn(date, timeZone);

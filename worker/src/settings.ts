@@ -186,6 +186,41 @@ export async function loadLastDocument(env: Env, userId: number): Promise<string
 }
 
 /**
+ * Витрати за добу. Загальна сума є в OpenRouter, але «скільки з'їв оцей
+ * запис» і «скільки набігло сьогодні» видно лише звідси — а саме ці два
+ * числа й показують, чи варта обрана модель своїх грошей.
+ *
+ * Ключ — локальна дата користувача, щоб «сьогодні» збігалося з тим, що
+ * людина вважає сьогоднішнім днем. Живе сорок днів.
+ */
+const SPEND_TTL_SECONDS = 3_456_000;
+const spendKey = (userId: number, day: string) => `spend:${userId}:${day}`;
+
+export async function addSpending(
+  env: Env,
+  userId: number,
+  day: string,
+  amount: number,
+): Promise<number> {
+  if (!(amount > 0)) return await spentToday(env, userId, day);
+  const total = (await spentToday(env, userId, day)) + amount;
+  await env.SETTINGS.put(spendKey(userId, day), total.toFixed(6), {
+    expirationTtl: SPEND_TTL_SECONDS,
+  });
+  return total;
+}
+
+export async function spentToday(
+  env: Env,
+  userId: number,
+  day: string,
+): Promise<number> {
+  const raw = await env.SETTINGS.get(spendKey(userId, day));
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : 0;
+}
+
+/**
  * Яке меню команд уже опубліковане в Telegram.
  *
  * Bot API зберігає перелік у себе, тож нові команди з'являються в списку

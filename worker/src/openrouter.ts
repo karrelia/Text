@@ -34,6 +34,21 @@ function headers(env: Env): HeadersInit {
 interface Completion {
   choices?: { message?: { content?: string | { text?: string }[] }; finish_reason?: string }[];
   error?: { message?: string };
+  usage?: { cost?: number };
+}
+
+/**
+ * Вартість останнього виклику в доларах, або null, коли OpenRouter її не
+ * повернув. Модуль без стану був би чистішим, але тягнути число крізь усі
+ * шари заради підпису під повідомленням — задорога: `complete` викликається
+ * з чотирьох місць, і кожному довелося б змінити сигнатуру.
+ */
+let lastCost: number | null = null;
+
+export function takeLastCost(): number | null {
+  const cost = lastCost;
+  lastCost = null;
+  return cost;
 }
 
 export async function complete(
@@ -43,6 +58,7 @@ export async function complete(
   temperature: number,
 ): Promise<string> {
   let lastError = "";
+  lastCost = null;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     let response: Response;
@@ -50,7 +66,15 @@ export async function complete(
       response = await fetch(`${BASE_URL}/chat/completions`, {
         method: "POST",
         headers: headers(env),
-        body: JSON.stringify({ model, messages, temperature }),
+        // usage.include просить OpenRouter повернути вартість виклику разом
+        // з відповіддю — інакше довелося б окремим запитом ходити по
+        // залишок і рахувати різницю.
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature,
+          usage: { include: true },
+        }),
       });
     } catch (error) {
       lastError = String(error);
@@ -85,6 +109,8 @@ export async function complete(
         `Модель ${model} не повернула тексту (finish_reason=${choice.finish_reason}).`,
       );
     }
+
+    if (typeof data.usage?.cost === "number") lastCost = data.usage.cost;
     return text;
   }
 

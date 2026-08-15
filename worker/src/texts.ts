@@ -243,13 +243,16 @@ export const REMINDER_FIRES = (text: string) => `⏰ <b>Нагадування</
 
 const money = (value: number) => `$${value.toFixed(2)}`;
 
-export const USAGE = (spent: number, granted: number) => {
+export const USAGE = (spent: number, granted: number, today?: number) => {
   const left = granted - spent;
   const lines = [
     "<b>Витрати OpenRouter</b>",
     "",
     `Витрачено: ${money(spent)}`,
   ];
+  // Загальну суму дає OpenRouter, а «сьогодні» рахуємо самі — саме воно
+  // показує, у скільки обходиться нинішня модель, поки її не пізно змінити.
+  if (today !== undefined) lines.push(`Сьогодні: ${priceTag(today)}`);
   if (granted > 0) {
     lines.push(`Поповнено: ${money(granted)}`, `<b>Залишок: ${money(left)}</b>`);
     if (left <= 1) {
@@ -274,11 +277,30 @@ export const CSV_HINT = "Перенести зчитане в таблицю?";
 
 // ── Повторний прогін ─────────────────────────────────────────────────────────
 
-/** Чинна вказівка показується під результатом — інакше про неї легко забути. */
-export const REDO_HINT = (note = "") =>
-  note.trim()
-    ? `Вказівка: <i>${escapeHtml(note.trim())}</i>\n\nЩе щось змінити?`
-    : "Не влаштовує результат?";
+/**
+ * Чинна вказівка показується під результатом — інакше про неї легко забути.
+ * Поруч — вартість: без неї вибір моделі робиться наосліп.
+ */
+export const REDO_HINT = (note = "", cost?: Spending) =>
+  [
+    note.trim() ? `Вказівка: <i>${escapeHtml(note.trim())}</i>` : "",
+    note.trim() ? "Ще щось змінити?" : "Не влаштовує результат?",
+    cost ? `<i>${spendingLine(cost)}</i>` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+export interface Spending {
+  now: number;
+  today: number;
+}
+
+/** Дрібні суми у центах: «$0.0004» читається гірше, ніж «0.04¢». */
+const priceTag = (value: number) =>
+  value < 0.01 ? `${(value * 100).toFixed(2)}¢` : `$${value.toFixed(3)}`;
+
+const spendingLine = (cost: Spending) =>
+  `${priceTag(cost.now)} · сьогодні ${priceTag(cost.today)}`;
 
 export const REDO_RUNNING = "Переробляю…";
 export const REDO_PICK_MODEL = "Обери модель — і я одразу перероблю цей запис:";

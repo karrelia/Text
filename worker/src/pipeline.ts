@@ -2,7 +2,7 @@
 
 import { type Env, numberVar } from "./env";
 import { photoResultKeyboard, reminderKeyboard, voiceResultKeyboard } from "./keyboards";
-import { OpenRouterError, processTranscript } from "./openrouter";
+import { OpenRouterError, processTranscript, takeLastCost } from "./openrouter";
 import { buildWhisperHint, styleForNote, styleKind } from "./prompts";
 import {
   ReminderError,
@@ -12,6 +12,7 @@ import {
 } from "./reminders";
 import {
   type LastJob,
+  addSpending,
   clearNoteRequest,
   loadSettings,
   saveLastDocument,
@@ -29,7 +30,7 @@ import {
   extractPhoto,
 } from "./telegram";
 import * as texts from "./texts";
-import { DEFAULT_TIMEZONE, formatLocal } from "./timezone";
+import { DEFAULT_TIMEZONE, formatLocal, localDay } from "./timezone";
 import { readPhoto } from "./vision";
 
 // ── Голосове ─────────────────────────────────────────────────────────────────
@@ -150,7 +151,7 @@ export async function runVoice(
   }
   await sendWhole(tg, chatId, cleaned, parts.length, "rozshyfrovka");
 
-  await tg.sendMessage(chatId, texts.REDO_HINT(note), {
+  await tg.sendMessage(chatId, texts.REDO_HINT(note, await countCost(env, userId)), {
     html: true,
     keyboard: voiceResultKeyboard(),
   });
@@ -229,10 +230,26 @@ export async function runPhoto(
   // друга перенесе в таблицю для Excel.
   await saveLastDocument(env, userId, text);
   await saveLastJob(env, userId, job);
-  await tg.sendMessage(chatId, texts.REDO_HINT(job.note ?? ""), {
+  await tg.sendMessage(chatId, texts.REDO_HINT(job.note ?? "", await countCost(env, userId)), {
     html: true,
     keyboard: photoResultKeyboard(texts.CSV_BUTTON),
   });
+}
+
+/**
+ * Скільки коштував щойно зроблений виклик і скільки набігло за добу.
+ *
+ * Розпізнавання через Groq сюди не входить — у нього своя тарифікація й
+ * окремий безкоштовний ліміт, а вигадувати число ми не будемо. Якщо
+ * OpenRouter вартості не повернув (буває для окремих постачальників),
+ * підпису просто не буде.
+ */
+async function countCost(env: Env, userId: number): Promise<texts.Spending | undefined> {
+  const now = takeLastCost();
+  if (now === null) return undefined;
+  const day = localDay(new Date(), env.TIMEZONE || DEFAULT_TIMEZONE);
+  const today = await addSpending(env, userId, day, now);
+  return { now, today };
 }
 
 /**
