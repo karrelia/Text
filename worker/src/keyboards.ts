@@ -19,6 +19,9 @@ export const PREFIX = {
   provider: "p:",
   reminderDelete: "rd:",
   reminderUndo: "ru:",
+  /** Відкласти те, що щойно спрацювало: "sn:<хвилини>". */
+  snooze: "sn:",
+  snoozeDone: "sd:",
   csv: "csv:",
   /**
    * Відкрити перелік для повторного прогону: "m" — модель, "s" — стиль,
@@ -142,6 +145,32 @@ export function reminderKeyboard(tail: string): InlineKeyboard {
   return {
     inline_keyboard: [
       [{ text: "🗑 Прибрати", callback_data: PREFIX.reminderDelete + tail }],
+    ],
+  };
+}
+
+/**
+ * Кнопки під нагадуванням, що спрацювало.
+ *
+ * Текст у callback_data не помістився б (ліміт 64 байти), тож несемо лише
+ * відстрочку у хвилинах і короткий ідентифікатор — сам текст лежить у KV.
+ * Ідентифікатор потрібен саме тому, що о дев'ятій може спрацювати кілька
+ * нагадувань, і «+1 год» під першим має відкласти саме перше.
+ */
+export const SNOOZE_STEPS = [
+  { minutes: 60, title: "+1 год" },
+  { minutes: 180, title: "+3 год" },
+  { minutes: 1440, title: "Завтра" },
+] as const;
+
+export function snoozeKeyboard(doneLabel: string, id: string): InlineKeyboard {
+  return {
+    inline_keyboard: [
+      SNOOZE_STEPS.map((step) => ({
+        text: step.title,
+        callback_data: `${PREFIX.snooze}${step.minutes}:${id}`,
+      })),
+      [{ text: doneLabel, callback_data: PREFIX.snoozeDone }],
     ],
   };
 }

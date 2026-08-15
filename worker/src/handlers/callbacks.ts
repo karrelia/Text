@@ -6,6 +6,7 @@ import {
   PRESET_LLM_MODELS,
   PRESET_VISION_MODELS,
   modelsKeyboard,
+  reminderKeyboard,
   stylesKeyboard,
   tweaksKeyboard,
 } from "../keyboards";
@@ -16,6 +17,8 @@ import { nextAfter } from "../recurrence";
 import {
   deleteReminder,
   keyFromTail,
+  keyTail,
+  loadFired,
   loadReminder,
   saveReminder,
   stashDeleted,
@@ -133,6 +136,21 @@ export async function handleCallback(
     return;
   }
 
+  if (data.startsWith(PREFIX.snooze)) {
+    await snoozeReminder(env, tg, query, userId, data.slice(PREFIX.snooze.length));
+    return;
+  }
+
+  if (data.startsWith(PREFIX.snoozeDone)) {
+    // Запис уже прибрано під час спрацювання (а повторюваний — перепризначено),
+    // тож лишається тільки прибрати кнопки, щоб не тиснулись повторно.
+    await tg.answerCallback(query.id, texts.REMINDER_ACKED);
+    if (chatId !== undefined && messageId !== undefined) {
+      await tg.editKeyboard(chatId, messageId);
+    }
+    return;
+  }
+
   if (data.startsWith(PREFIX.style)) {
     const key = data.slice(PREFIX.style.length);
     const style = STYLES[key];
@@ -224,6 +242,49 @@ async function restoreReminder(
     texts.REMINDER_RESTORED(formatLocal(new Date(dueAt), timeZone)),
   );
   await redrawReminders(env, tg, query, userId, texts.REMINDERS_EMPTY);
+}
+
+/**
+ * Відкладає те, що щойно спрацювало.
+ *
+ * Створюємо саме одноразовий запис, навіть якщо нагадування повторюване:
+ * «нагадай ще раз за годину» стосується цього разу, а не всієї серії —
+ * наступне спрацювання за розкладом уже стоїть і чіпати його не можна.
+ */
+async function snoozeReminder(
+  env: Env,
+  tg: TelegramClient,
+  query: TgCallbackQuery,
+  userId: number,
+  payload: string,
+): Promise<void> {
+  const chatId = query.message?.chat.id;
+  const [rawMinutes, id] = payload.split(":");
+  const minutes = Number(rawMinutes);
+
+  if (chatId === undefined || !Number.isFinite(minutes) || minutes <= 0 || !id) {
+    await tg.answerCallback(query.id, texts.STALE_CHOICE, true);
+    return;
+  }
+
+  const text = await loadFired(env, userId, id);
+  if (!text) {
+    await tg.answerCallback(query.id, texts.SNOOZE_GONE, true);
+    return;
+  }
+
+  const dueAt = Date.now() + minutes * 60_000;
+  const key = await saveReminder(env, userId, chatId, text, dueAt);
+  const when = formatLocal(new Date(dueAt), env.TIMEZONE || DEFAULT_TIMEZONE);
+
+  await tg.answerCallback(query.id, texts.SNOOZED_TOAST(when));
+  if (query.message?.message_id !== undefined) {
+    await tg.editKeyboard(chatId, query.message.message_id);
+  }
+  await tg.sendMessage(chatId, texts.SNOOZED(text, when), {
+    html: true,
+    keyboard: reminderKeyboard(keyTail(key)),
+  });
 }
 
 /** Перемальовує список у тому самому повідомленні. */

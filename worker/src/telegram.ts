@@ -165,6 +165,29 @@ export class TelegramClient {
   }
 
   /**
+   * Міняє лише кнопки, не чіпаючи тексту. Потрібне там, де текст уже
+   * відрендерений і переслати його як HTML не вийде — наприклад, щоб
+   * прибрати кнопки під нагадуванням, яке щойно відклали.
+   */
+  async editKeyboard(
+    chatId: number,
+    messageId: number,
+    keyboard?: InlineKeyboard,
+  ): Promise<void> {
+    try {
+      await this.call("editMessageReplyMarkup", {
+        chat_id: chatId,
+        message_id: messageId,
+        reply_markup: keyboard,
+      });
+    } catch (error) {
+      if (!(error instanceof TelegramError) || !/not modified/i.test(error.message)) {
+        console.log("Не вдалося оновити кнопки", error);
+      }
+    }
+  }
+
+  /**
    * Прибирає своє повідомлення. Telegram дозволяє це протягом 48 годин;
    * невдачу ковтаємо — перелік кнопок, що затримався в чаті, не привід
    * зривати обробку.

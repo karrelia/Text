@@ -303,6 +303,39 @@ export async function stashDeleted(env: Env, reminder: Reminder): Promise<void> 
   });
 }
 
+/**
+ * Те, що щойно спрацювало, — щоб кнопка «відкласти» знала, про що йшлося.
+ *
+ * У callback_data текст не влазить (64 байти), тож несемо там лише короткий
+ * ідентифікатор, а сам текст лежить тут добу.
+ */
+const FIRED_TTL_SECONDS = 86_400;
+const firedKey = (userId: number, id: string) => `fire:${userId}:${id}`;
+
+/** Хвіст ключа нагадування — достатньо короткий для кнопки. */
+export function firedId(key: string): string {
+  return key.split(":").pop() ?? "";
+}
+
+export async function rememberFired(
+  env: Env,
+  userId: number,
+  id: string,
+  text: string,
+): Promise<void> {
+  await env.SETTINGS.put(firedKey(userId, id), text, {
+    expirationTtl: FIRED_TTL_SECONDS,
+  });
+}
+
+export async function loadFired(
+  env: Env,
+  userId: number,
+  id: string,
+): Promise<string> {
+  return (await env.SETTINGS.get(firedKey(userId, id))) ?? "";
+}
+
 export async function takeDeleted(
   env: Env,
   userId: number,

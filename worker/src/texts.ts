@@ -222,6 +222,16 @@ export const renderReminders = (
     "<i>Прибрати — кнопкою з відповідним номером.</i>",
   ].join("\n");
 
+export const SNOOZE_DONE_BUTTON = "✅ Готово";
+export const REMINDER_ACKED = "✅ Готово";
+export const SNOOZED_TOAST = (when: string) => `Відкладено до ${when}`;
+
+export const SNOOZED = (text: string, when: string) =>
+  `😴 Відкладено до <b>${escapeHtml(when)}</b>\n\n${escapeHtml(text)}`;
+
+export const SNOOZE_GONE =
+  "Це нагадування вже не під рукою — відкласти можна протягом доби. Створи нове через /remind.";
+
 export const REMINDER_DELETED = "🗑 Прибрано.";
 export const REMINDER_UNDO_BUTTON = "↩️ Повернути";
 export const REMINDER_RESTORED = (when: string) => `↩️ Повернуто на ${escapeHtml(when)}.`;

@@ -11,7 +11,14 @@ import { type Env, allowedUserIds } from "./env";
 import { handleCallback } from "./handlers/callbacks";
 import { COMMANDS, handleCommand, parseCommand } from "./handlers/commands";
 import { handleAudioMessage, handlePhotoMessage, maybeRemind, rerun } from "./pipeline";
-import { deleteReminder, dueReminders, saveReminder } from "./reminders";
+import { snoozeKeyboard } from "./keyboards";
+import {
+  deleteReminder,
+  dueReminders,
+  firedId,
+  rememberFired,
+  saveReminder,
+} from "./reminders";
 import { nextAfter } from "./recurrence";
 import { DEFAULT_TIMEZONE, formatLocal } from "./timezone";
 import {
@@ -99,7 +106,15 @@ export async function sendDueReminders(env: Env): Promise<number> {
               reminder.repeat,
             )
           : texts.REMINDER_FIRES(reminder.text);
-      await tg.sendMessage(reminder.chatId, text, { html: true });
+
+      // Прийшло невчасно — за кермом, на нараді. Без кнопок єдиний вихід
+      // був створювати нагадування заново, диктуючи той самий текст.
+      const id = firedId(reminder.key);
+      await rememberFired(env, reminder.userId, id, reminder.text);
+      await tg.sendMessage(reminder.chatId, text, {
+        html: true,
+        keyboard: snoozeKeyboard(texts.SNOOZE_DONE_BUTTON, id),
+      });
       sent += 1;
     } catch (error) {
       // Не змогли надіслати — лишаємо запис, спробуємо за хвилину.

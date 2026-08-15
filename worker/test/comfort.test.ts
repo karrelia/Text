@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Env } from "../src/env";
 import { PREFIX, remindersKeyboard } from "../src/keyboards";
 import {
+  firedId,
   listReminders,
   loadReminder,
+  rememberFired,
   saveReminder,
   stashDeleted,
   takeDeleted,
@@ -56,6 +58,7 @@ function fakeTelegram() {
         if (text) alerts.push(text);
       }),
       deleteMessage: vi.fn(async () => undefined),
+      editKeyboard: vi.fn(async () => undefined),
       sendChatAction: vi.fn(async () => undefined),
     },
   };
@@ -183,6 +186,77 @@ describe("випадкове видалення", () => {
 
     expect(await takeDeleted(env, USER)).not.toBeNull();
     expect(await takeDeleted(env, USER)).toBeNull();
+  });
+});
+
+// Нагадування приходить тоді, коли його поставили, а не тоді, коли зручно.
+// Без кнопок єдиним виходом було продиктувати той самий текст заново.
+describe("відкласти нагадування", () => {
+  const fire = async (text: string, id: string) => {
+    await rememberFired(env, USER, id, text);
+  };
+
+  it("створює новий запис на вказаний час", async () => {
+    await fire("передзвонити Кириленку", "abc123");
+    const before = Date.now();
+
+    await handleCallback(env, tg.client as never, press(`${PREFIX.snooze}60:abc123`));
+
+    const list = await listReminders(env, USER);
+    expect(list).toHaveLength(1);
+    expect(list[0]?.text).toBe("передзвонити Кириленку");
+    expect(list[0]!.dueAt).toBeGreaterThanOrEqual(before + 59 * 60_000);
+    expect(list[0]!.dueAt).toBeLessThanOrEqual(Date.now() + 61 * 60_000);
+  });
+
+  // Відкладаємо цей раз, а не всю серію: наступне спрацювання за розкладом
+  // уже стоїть окремим записом, і чіпати його не можна.
+  it("відкладене — одноразове навіть для повторюваного", async () => {
+    await fire("передати показники", "rep777");
+    await handleCallback(env, tg.client as never, press(`${PREFIX.snooze}180:rep777`));
+
+    expect((await listReminders(env, USER))[0]?.repeat).toBeUndefined();
+  });
+
+  it("кілька нагадувань за раз не плутаються", async () => {
+    await fire("перше", "aaa111");
+    await fire("друге", "bbb222");
+
+    await handleCallback(env, tg.client as never, press(`${PREFIX.snooze}60:bbb222`));
+
+    expect((await listReminders(env, USER))[0]?.text).toBe("друге");
+  });
+
+  it("кнопки прибираються, щоб не відкласти двічі", async () => {
+    await fire("звіт", "ccc333");
+    await handleCallback(env, tg.client as never, press(`${PREFIX.snooze}60:ccc333`));
+
+    expect(tg.client.editKeyboard).toHaveBeenCalled();
+  });
+
+  it("забуте за добу нагадування чесно про це каже", async () => {
+    await handleCallback(env, tg.client as never, press(`${PREFIX.snooze}60:немає`));
+
+    expect(await listReminders(env, USER)).toHaveLength(0);
+    expect(tg.alerts.at(-1)).toContain("вже не під рукою");
+  });
+
+  it("зіпсована кнопка нічого не створює", async () => {
+    await fire("звіт", "ddd444");
+    await handleCallback(env, tg.client as never, press(`${PREFIX.snooze}казна-що:ddd444`));
+
+    expect(await listReminders(env, USER)).toHaveLength(0);
+  });
+
+  it("«Готово» лише знімає кнопки", async () => {
+    await handleCallback(env, tg.client as never, press(PREFIX.snoozeDone));
+
+    expect(tg.client.editKeyboard).toHaveBeenCalled();
+    expect(await listReminders(env, USER)).toHaveLength(0);
+  });
+
+  it("ідентифікатор береться з хвоста ключа", () => {
+    expect(firedId("rem:42:000001788000000:abc123")).toBe("abc123");
   });
 });
 
