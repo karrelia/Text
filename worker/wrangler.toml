@@ -31,6 +31,11 @@ LLM_TEMPERATURE = "0.2"
 # Максимальна тривалість запису, секунд (0 = без ліміту)
 MAX_AUDIO_SECONDS = "5400"
 
+# Скільки чекати решту знімків альбому, мс. Telegram шле їх окремими
+# оновленнями з розривом у сотні мілісекунд; більше — надійніше, але
+# кожна сторінка альбому стільки й чекатиме.
+ALBUM_WAIT_MS = "1500"
+
 OPENROUTER_APP_URL = "https://github.com/karrelia/Text"
 OPENROUTER_APP_TITLE = "Voice2Text UA Bot"
 

@@ -1,5 +1,6 @@
 /** Головні сценарії: голосове → чистий текст, фото → зчитаний текст. */
 
+import { GATHER_MS, type AlbumPage, addPage, gather } from "./album";
 import { type Env, numberVar } from "./env";
 import { photoResultKeyboard, reminderKeyboard, voiceResultKeyboard } from "./keyboards";
 import { OpenRouterError, processTranscript, takeLastCost } from "./openrouter";
@@ -31,7 +32,7 @@ import {
 } from "./telegram";
 import * as texts from "./texts";
 import { DEFAULT_TIMEZONE, formatLocal, localDay } from "./timezone";
-import { readPhoto } from "./vision";
+import { type PhotoInput, readPhoto } from "./vision";
 
 // ── Голосове ─────────────────────────────────────────────────────────────────
 
@@ -177,13 +178,54 @@ export async function handlePhotoMessage(
 
   await clearNoteRequest(env, userId);
 
-  await runPhoto(env, tg, chatId, userId, {
+  const job: LastJob = {
     kind: "photo",
     fileId: photo.file_id,
     mimeType: photo.mime_type ?? "image/jpeg",
     caption: message.caption ?? "",
-  });
+  };
+
+  // Альбом приходить окремими оновленнями — зачекаємо решту сторінок і
+  // прочитаємо документ цілком.
+  if (message.media_group_id) {
+    const page: AlbumPage = {
+      fileId: photo.file_id,
+      mimeType: job.mimeType!,
+      caption: message.caption ?? "",
+      messageId: message.message_id,
+    };
+    await addPage(env, userId, message.media_group_id, page);
+    const album = await gather(
+      env,
+      userId,
+      message.media_group_id,
+      photo.file_id,
+      numberVar(env.ALBUM_WAIT_MS, GATHER_MS),
+    );
+    if (!album) return;
+
+    const pages = album.slice(0, MAX_ALBUM_PAGES);
+    await runPhoto(env, tg, chatId, userId, {
+      ...job,
+      fileId: pages[0]!.fileId,
+      fileIds: pages.map((item) => item.fileId),
+      mimeType: pages[0]!.mimeType,
+      // Підпис Telegram чіпляє лише до одного знімка альбому — беремо той,
+      // що є, байдуже якої зі сторінок він стосувався.
+      caption: pages.find((item) => item.caption.trim())?.caption ?? "",
+    });
+    return;
+  }
+
+  await runPhoto(env, tg, chatId, userId, job);
 }
+
+/**
+ * Стеля на сторінки в одному прогоні. Кожен знімок роздувається в base64
+ * і летить у тілі запиту; десяток — уже мегабайти, а процесорного часу на
+ * вільному тарифі 10 мс.
+ */
+const MAX_ALBUM_PAGES = 10;
 
 /** Прогін знімка. Перечитати іншою моделлю можна тим самим викликом. */
 export async function runPhoto(
@@ -199,13 +241,18 @@ export async function runPhoto(
   let text: string;
   try {
     const user = await loadSettings(env, userId);
-    const file = await tg.downloadFile(job.fileId);
+    const fileIds = job.fileIds?.length ? job.fileIds : [job.fileId];
+    const images: PhotoInput[] = [];
+    for (const fileId of fileIds) {
+      const file = await tg.downloadFile(fileId);
+      images.push({ body: file.body, mimeType: job.mimeType || "image/jpeg" });
+    }
+
     // Підпис під фото і вказівка — те саме за призначенням, тож ідуть разом:
     // «лише показники» з підпису лишається чинним і після «зроби таблицею».
     text = await readPhoto(
       env,
-      file.body,
-      job.mimeType || "image/jpeg",
+      images,
       user,
       [job.caption, job.note].filter((part) => part?.trim()).join("\n"),
     );

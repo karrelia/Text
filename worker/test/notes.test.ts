@@ -13,8 +13,7 @@ const readPhoto = vi.hoisted(() =>
   vi.fn(
     async (
       _env: unknown,
-      _body: unknown,
-      _mime: string,
+      _images: { mimeType: string }[],
       _user: unknown,
       _instruction: string,
     ) => "Зчитано з фото",
@@ -201,7 +200,7 @@ describe("вказівка кнопкою", () => {
     await handlePhotoMessage(env, client as never, photoMessage("лише показники"), USER);
     await handleCallback(env, client as never, press(`${PREFIX.redoNote}table`));
 
-    const instruction = readPhoto.mock.calls[1]?.[4] ?? "";
+    const instruction = readPhoto.mock.calls[1]?.[3] ?? "";
     expect(instruction).toContain("лише показники");
     expect(instruction).toContain(TWEAKS.table!.text);
   });

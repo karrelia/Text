@@ -20,6 +20,8 @@ export interface Env {
   TIMEZONE?: string;
   LLM_TEMPERATURE?: string;
   MAX_AUDIO_SECONDS?: string;
+  /** Скільки чекати решту знімків альбому, мс. */
+  ALBUM_WAIT_MS?: string;
   OPENROUTER_APP_URL?: string;
   OPENROUTER_APP_TITLE?: string;
 }

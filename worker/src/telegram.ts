@@ -31,6 +31,8 @@ export interface TgMessage {
   video_note?: TgFileMeta;
   document?: TgFileMeta;
   photo?: TgPhotoSize[];
+  /** Спільний для всіх знімків одного альбому. */
+  media_group_id?: string;
   reply_to_message?: TgMessage;
 }
 

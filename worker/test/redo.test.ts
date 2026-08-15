@@ -17,10 +17,9 @@ const readPhoto = vi.hoisted(() =>
   vi.fn(
     async (
       _env: unknown,
-      _body: unknown,
-      _mime: string,
+      _images: { mimeType: string }[],
       _user: { visionModel: string },
-      _caption: string,
+      _instruction: string,
     ) => "Зчитано з фото",
   ),
 );
@@ -207,8 +206,8 @@ describe("повторний прогін фото", () => {
     expect(readPhoto).toHaveBeenCalledTimes(2);
     expect(tg.client.downloadFile).toHaveBeenLastCalledWith("PHOTO-1");
     expect((await loadSettings(env, USER)).visionModel).toBe("google/gemini-2.5-pro");
-    expect(readPhoto.mock.calls[1]?.[3]?.visionModel).toBe("google/gemini-2.5-pro");
-    expect(readPhoto.mock.calls[1]?.[4]).toBe("лише показники");
+    expect(readPhoto.mock.calls[1]?.[2]?.visionModel).toBe("google/gemini-2.5-pro");
+    expect(readPhoto.mock.calls[1]?.[3]).toBe("лише показники");
   });
 
   it("«перерозпізнати» до знімка не застосовується", async () => {

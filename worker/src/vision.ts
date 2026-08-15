@@ -24,27 +24,43 @@ export function dataUri(bytes: Uint8Array, mimeType: string): string {
   return `data:${safe};base64,${toBase64(bytes)}`;
 }
 
+export interface PhotoInput {
+  body: Response;
+  mimeType: string;
+}
+
+/**
+ * Кілька знімків читаються одним запитом: сторінки одного акта мають
+ * потрапити до моделі разом, інакше вона не побачить, що шапка з першої
+ * сторінки стосується таблиці на другій.
+ */
 export async function readPhoto(
   env: Env,
-  image: Response,
-  mimeType: string,
+  images: PhotoInput[],
   user: UserSettings,
   instruction: string,
 ): Promise<string> {
-  const bytes = new Uint8Array(await image.arrayBuffer());
+  const parts: unknown[] = [
+    {
+      type: "text",
+      text:
+        images.length > 1
+          ? `Зчитай текст із цих знімків (${images.length} сторінки одного документа).`
+          : "Зчитай текст із цього знімка.",
+    },
+  ];
+
+  for (const image of images) {
+    const bytes = new Uint8Array(await image.body.arrayBuffer());
+    parts.push({ type: "image_url", image_url: { url: dataUri(bytes, image.mimeType) } });
+  }
 
   const messages = [
     {
       role: "system",
-      content: buildPhotoSystemPrompt(user.glossary, instruction),
+      content: buildPhotoSystemPrompt(user.glossary, instruction, images.length),
     },
-    {
-      role: "user",
-      content: [
-        { type: "text", text: "Зчитай текст із цього знімка." },
-        { type: "image_url", image_url: { url: dataUri(bytes, mimeType) } },
-      ],
-    },
+    { role: "user", content: parts },
   ];
 
   const result = await complete(env, user.visionModel, messages, 0);

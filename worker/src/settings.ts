@@ -113,6 +113,8 @@ export async function loadLastTranscript(env: Env, userId: number): Promise<stri
 export interface LastJob {
   kind: "voice" | "photo";
   fileId: string;
+  /** Решта сторінок альбому. Порожньо — знімок один. */
+  fileIds?: string[];
   fileName?: string;
   mimeType?: string;
   caption?: string;
