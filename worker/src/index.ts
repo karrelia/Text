@@ -14,7 +14,13 @@ import { handleAudioMessage, handlePhotoMessage, maybeRemind, rerun } from "./pi
 import { deleteReminder, dueReminders, saveReminder } from "./reminders";
 import { nextAfter } from "./recurrence";
 import { DEFAULT_TIMEZONE, formatLocal } from "./timezone";
-import { loadLastJob, seenUpdate, takeNoteRequest } from "./settings";
+import {
+  loadLastJob,
+  menuPublished,
+  rememberMenu,
+  seenUpdate,
+  takeNoteRequest,
+} from "./settings";
 import {
   TelegramClient,
   type TgUpdate,
@@ -145,6 +151,8 @@ export async function handleUpdate(env: Env, update: TgUpdate): Promise<void> {
     return;
   }
 
+  await syncMenu(env, tg);
+
   if (message.text) {
     const command = parseCommand(message.text);
     // Очікування знімаємо в будь-якому разі: якщо замість вказівки прийшла
@@ -181,6 +189,28 @@ export async function handleUpdate(env: Env, update: TgUpdate): Promise<void> {
   await tg.sendMessage(message.chat.id, texts.NOT_AUDIO);
 }
 
+/**
+ * Тримає меню команд у Telegram відповідним до коду.
+ *
+ * Раніше перелік публікувався лише під час прив'язки вебхука, тож кожна
+ * додана згодом команда лишалася невидимою в списку «/» доти, доки людина
+ * не здогадається ще раз відкрити /setup. Тепер розбіжність помічається
+ * сама — ціною одного читання з KV.
+ *
+ * Помилку ковтаємо навмисне: несвіже меню — прикрість, а от впасти через
+ * неї посеред обробки голосового було б значно гірше.
+ */
+async function syncMenu(env: Env, tg: TelegramClient): Promise<void> {
+  const fingerprint = JSON.stringify(COMMANDS);
+  try {
+    if (await menuPublished(env, fingerprint)) return;
+    await tg.setMyCommands(COMMANDS);
+    await rememberMenu(env, fingerprint);
+  } catch (error) {
+    console.error("Не вдалося оновити меню команд", error);
+  }
+}
+
 /** Написана від руки вказівка: переганяємо нею останній запис. */
 async function applyOwnNote(
   env: Env,
@@ -213,6 +243,7 @@ async function handleSetup(request: Request, env: Env, url: URL): Promise<Respon
   try {
     await tg.setWebhook(webhookUrl, env.WEBHOOK_SECRET);
     await tg.setMyCommands(COMMANDS);
+    await rememberMenu(env, JSON.stringify(COMMANDS));
   } catch (error) {
     return new Response(`Не вдалося: ${String(error)}`, { status: 502 });
   }

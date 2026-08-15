@@ -186,6 +186,24 @@ export async function loadLastDocument(env: Env, userId: number): Promise<string
 }
 
 /**
+ * Яке меню команд уже опубліковане в Telegram.
+ *
+ * Bot API зберігає перелік у себе, тож нові команди з'являються в списку
+ * лише після setMyCommands — сам по собі deploy його не оновлює. Тримаємо
+ * зліпок опублікованого, щоб смикати Telegram рівно тоді, коли перелік
+ * справді змінився, а не на кожне повідомлення.
+ */
+const MENU_KEY = "meta:commands";
+
+export async function menuPublished(env: Env, fingerprint: string): Promise<boolean> {
+  return (await env.SETTINGS.get(MENU_KEY)) === fingerprint;
+}
+
+export async function rememberMenu(env: Env, fingerprint: string): Promise<void> {
+  await env.SETTINGS.put(MENU_KEY, fingerprint);
+}
+
+/**
  * Захист від повторної обробки: Telegram перешле оновлення знову, якщо ми
  * не встигли відповісти вчасно. Повертає true, якщо це дублікат.
  */
