@@ -29,7 +29,17 @@ import {
   saveReminder,
 } from "../reminders";
 import { recent, search, stampOf } from "../history";
+import {
+  deleteBirthday,
+  fetchForecast,
+  fetchRates,
+  listBirthdays,
+  parseBirthday,
+  saveBirthday,
+  weatherWord,
+} from "../daily";
 import { loadMonth, monthOf, summarize } from "../expenses";
+import { translate } from "../reading";
 import { addItems, itemTail, listId, listNames, loadList } from "../lists";
 import { showList } from "../pipeline";
 import {
@@ -65,6 +75,10 @@ export const COMMANDS = [
   { command: "autoremind", description: "Нагадування без команди" },
   { command: "list", description: "Списки: покупки, справи" },
   { command: "expenses", description: "Витрати за місяць" },
+  { command: "birthday", description: "Дні народження" },
+  { command: "weather", description: "Погода на сьогодні й завтра" },
+  { command: "rate", description: "Курс валют НБУ" },
+  { command: "tr", description: "Переклад" },
   { command: "template", description: "Шаблони документів" },
   { command: "find", description: "Пошук по надиктованому" },
   { command: "history", description: "Останні записи" },
@@ -170,6 +184,65 @@ export async function handleCommand(
       });
       return;
     }
+
+    case "birthday":
+    case "birthdays":
+      await handleBirthday(env, tg, chatId, userId, args);
+      return;
+
+    case "city": {
+      if (!args.trim()) {
+        const user = await loadSettings(env, userId);
+        await tg.sendMessage(
+          chatId,
+          user.city ? texts.CITY_SAVED(user.city) : texts.WEATHER_NO_CITY,
+          html,
+        );
+        return;
+      }
+      await updateSettings(env, userId, { city: args.trim() });
+      await tg.sendMessage(chatId, texts.CITY_SAVED(args.trim()), html);
+      return;
+    }
+
+    case "weather": {
+      const user = await loadSettings(env, userId);
+      const city = args.trim() || user.city;
+      if (!city) {
+        await tg.sendMessage(chatId, texts.WEATHER_NO_CITY, html);
+        return;
+      }
+      try {
+        const forecast = await fetchForecast(city, env.TIMEZONE || DEFAULT_TIMEZONE);
+        await tg.sendMessage(
+          chatId,
+          texts.weather(
+            forecast.city,
+            { ...forecast.today, word: weatherWord(forecast.today.code) },
+            { ...forecast.tomorrow, word: weatherWord(forecast.tomorrow.code) },
+          ),
+          html,
+        );
+      } catch (error) {
+        await tg.sendMessage(chatId, texts.SERVICE_FAILED("погоду", String(error)), html);
+      }
+      return;
+    }
+
+    case "rate":
+    case "rates": {
+      try {
+        await tg.sendMessage(chatId, texts.RATES(await fetchRates()), html);
+      } catch (error) {
+        await tg.sendMessage(chatId, texts.SERVICE_FAILED("курс", String(error)), html);
+      }
+      return;
+    }
+
+    case "tr":
+    case "translate":
+      await handleTranslate(env, tg, message, chatId, userId, args);
+      return;
 
     case "list":
     case "lists":
@@ -542,6 +615,94 @@ async function handleHistory(
     ),
     { html: true, keyboard: historyKeyboard(items.map((item) => stampOf(item.key))) },
   );
+}
+
+/** `/birthday` — перелік, дата з ім'ям — додати, «- ім'я» — прибрати. */
+async function handleBirthday(
+  env: Env,
+  tg: TelegramClient,
+  chatId: number,
+  userId: number,
+  args: string,
+): Promise<void> {
+  const html = { html: true } as const;
+  const trimmed = args.trim();
+
+  if (!trimmed) {
+    const all = await listBirthdays(env, userId);
+    await tg.sendMessage(
+      chatId,
+      all.length === 0 ? texts.BIRTHDAY_HELP : texts.birthdayList(all),
+      html,
+    );
+    return;
+  }
+
+  const removal = /^-\s*(.+)$/s.exec(trimmed);
+  if (removal?.[1]) {
+    const name = removal[1].trim().toLowerCase();
+    const hit = (await listBirthdays(env, userId)).find(
+      (item) => item.name.toLowerCase() === name,
+    );
+    if (!hit) {
+      await tg.sendMessage(chatId, texts.BIRTHDAY_UNKNOWN(removal[1].trim()), html);
+      return;
+    }
+    await deleteBirthday(env, hit.key);
+    await tg.sendMessage(chatId, texts.BIRTHDAY_REMOVED(hit.name), html);
+    return;
+  }
+
+  const parsed = parseBirthday(trimmed);
+  if (!parsed) {
+    await tg.sendMessage(chatId, texts.BIRTHDAY_BAD_DATE, html);
+    return;
+  }
+
+  // Ім'я — це те, що лишилось після дати: числа й назву місяця прибираємо.
+  const name = trimmed
+    .replace(/\d{1,2}[.\-/]\d{1,2}([.\-/]\d{4})?/, " ")
+    .replace(/\d{4}/, " ")
+    .replace(/^\s*\d{1,2}\s+[\p{L}]+/u, " ")
+    .trim();
+
+  if (!name) {
+    await tg.sendMessage(chatId, texts.BIRTHDAY_BAD_DATE, html);
+    return;
+  }
+
+  await saveBirthday(env, userId, parsed.when, name, parsed.year);
+  await tg.sendMessage(chatId, texts.BIRTHDAY_SAVED(name, parsed.when), html);
+}
+
+/** `/tr` — переклад в обидва боки. Джерело те саме, що й у /remind. */
+async function handleTranslate(
+  env: Env,
+  tg: TelegramClient,
+  message: TgMessage,
+  chatId: number,
+  userId: number,
+  args: string,
+): Promise<void> {
+  const replied = message.reply_to_message?.text || message.reply_to_message?.caption || "";
+  const source = args.trim() || replied.trim();
+
+  if (!source) {
+    await tg.sendMessage(chatId, texts.TRANSLATE_HELP, { html: true });
+    return;
+  }
+
+  const status = await tg.sendMessage(chatId, texts.STATUS_TRANSLATING);
+  try {
+    const user = await loadSettings(env, userId);
+    const translated = await translate(env, source, user);
+    await tg.editMessage(chatId, status.message_id, translated);
+  } catch (error) {
+    const reason = error instanceof OpenRouterError ? error.message : String(error);
+    await tg.editMessage(chatId, status.message_id, texts.ERROR_GENERIC(reason), {
+      html: true,
+    });
+  }
 }
 
 /**

@@ -43,6 +43,10 @@ export const HELP =
   "/autoremind — чи створювати нагадування без команди\n" +
   "/reminders — список нагадувань\n" +
   "/template — шаблони документів: бланк + надиктоване = готовий папір\n" +
+  "/list — списки: покупки, справи, ідеї\n" +
+  "/expenses — витрати за місяць із чеків\n" +
+  "/birthday — дні народження, вітання о 9:00\n" +
+  "/weather — погода, /rate — курс НБУ, /tr — переклад\n" +
   "/find — пошук по надиктованому (<code>/find Гаркушенці</code>)\n" +
   "/history — останні записи\n" +
   "/usage — витрати й залишок на OpenRouter\n" +
@@ -349,6 +353,76 @@ export const historyEntry = (
   kind: "voice" | "photo" | "text",
   text: string,
 ) => `${kindIcon(kind)} <b>${escapeHtml(when)}</b>\n\n${escapeHtml(text)}`;
+
+// ── Дні народження, погода, курс ─────────────────────────────────────────────
+
+export const BIRTHDAY_HELP =
+  "<b>Дні народження</b>\n\n" +
+  "Вітання приходить о 9:00 у сам день, з віком, якщо назвати рік.\n\n" +
+  "Додати:\n" +
+  "<code>/birthday 31.12 Кириленко</code>\n" +
+  "<code>/birthday 5 березня 1980 мама</code>\n\n" +
+  "Прибрати: <code>/birthday - мама</code>";
+
+export const BIRTHDAY_SAVED = (name: string, when: string) =>
+  `🎂 Запам'ятав: <b>${escapeHtml(name)}</b> — ${escapeHtml(when)}`;
+
+export const BIRTHDAY_BAD_DATE =
+  "Не зрозумів дату. Напиши як <code>31.12</code> або <code>5 березня</code>, " +
+  "далі ім'я.";
+
+export const BIRTHDAY_REMOVED = (name: string) => `🗑 Прибрав: ${escapeHtml(name)}`;
+export const BIRTHDAY_UNKNOWN = (name: string) =>
+  `Немає такого запису: ${escapeHtml(name)}`;
+
+export const birthdayList = (items: { when: string; name: string; year?: number }[]) =>
+  [
+    `<b>Дні народження (${items.length})</b>`,
+    "",
+    ...items.map(
+      (item) =>
+        `🎂 ${escapeHtml(item.when)} — ${escapeHtml(item.name)}` +
+        (item.year ? ` <i>(${item.year})</i>` : ""),
+    ),
+  ].join("\n");
+
+export const BIRTHDAY_TODAY = (name: string, age: number | null) =>
+  `🎂 <b>Сьогодні день народження</b>\n\n${escapeHtml(name)}` +
+  (age === null ? "" : ` — виповнюється ${age}`);
+
+export const RATES = (rates: { code: string; rate: number }[]) =>
+  [
+    "💱 <b>Курс Нацбанку</b>",
+    "",
+    ...rates.map((r) => `${r.code} — ${r.rate.toFixed(2)} грн`),
+  ].join("\n");
+
+export const weather = (
+  city: string,
+  today: { min: number; max: number; word: string },
+  tomorrow: { min: number; max: number; word: string },
+) =>
+  `🌤 <b>${escapeHtml(city)}</b>\n\n` +
+  `Сьогодні: ${today.min}…${today.max}°, ${today.word}\n` +
+  `Завтра: ${tomorrow.min}…${tomorrow.max}°, ${tomorrow.word}`;
+
+export const WEATHER_NO_CITY =
+  "Не знаю, для якого міста дивитись погоду.\n\n" +
+  "Задай його: <code>/city Миргород</code>";
+
+export const CITY_SAVED = (city: string) => `📍 Місто: <b>${escapeHtml(city)}</b>`;
+
+export const SERVICE_FAILED = (what: string, reason: string) =>
+  `Не вдалося дізнатись ${escapeHtml(what)}: <code>${escapeHtml(reason)}</code>`;
+
+export const TRANSLATE_HELP =
+  "<b>Переклад</b>\n\n" +
+  "<code>/tr текст</code> — іншомовне перекладу українською, українське — " +
+  "англійською.\n\n" +
+  "Можна й відповіддю на повідомлення: <code>/tr</code> без тексту візьме те, " +
+  "на що відповідаєш.";
+
+export const STATUS_TRANSLATING = "🌐 Перекладаю…";
 
 // ── Витрати ──────────────────────────────────────────────────────────────────
 

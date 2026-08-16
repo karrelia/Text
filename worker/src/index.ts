@@ -18,6 +18,13 @@ import {
   rerun,
 } from "./pipeline";
 import { READ_THRESHOLD } from "./reading";
+import {
+  ageOn,
+  birthdaysOn,
+  greetedToday,
+  isGreetingTime,
+  todayIn,
+} from "./daily";
 import { snoozeKeyboard } from "./keyboards";
 import {
   deleteReminder,
@@ -27,7 +34,7 @@ import {
   saveReminder,
 } from "./reminders";
 import { nextAfter } from "./recurrence";
-import { DEFAULT_TIMEZONE, formatLocal } from "./timezone";
+import { DEFAULT_TIMEZONE, formatLocal, localParts } from "./timezone";
 import {
   loadLastJob,
   menuPublished,
@@ -85,6 +92,7 @@ export default {
   /** Cron: раз на хвилину розсилає нагадування, час яких настав. */
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
     await sendDueReminders(env);
+    await sendBirthdays(env);
   },
 } satisfies ExportedHandler<Env>;
 
@@ -143,6 +151,41 @@ export async function sendDueReminders(env: Env): Promise<number> {
       );
     }
     await deleteReminder(env, reminder.key);
+  }
+
+  return sent;
+}
+
+/**
+ * Вітання з днем народження о дев'ятій ранку.
+ *
+ * Cron ходить щохвилини, тож без позначки «за цей день уже привітали»
+ * о дев'ятій прилетіло б шістдесят однакових повідомлень.
+ */
+export async function sendBirthdays(env: Env): Promise<number> {
+  const timeZone = env.TIMEZONE || DEFAULT_TIMEZONE;
+  const now = localParts(new Date(), timeZone);
+  if (!isGreetingTime(now.hour, now.minute)) return 0;
+
+  const day = todayIn(timeZone);
+  const tg = new TelegramClient(env.TELEGRAM_BOT_TOKEN);
+  let sent = 0;
+
+  for (const userId of allowedUserIds(env)) {
+    const today = await birthdaysOn(env, userId, day);
+    if (today.length === 0) continue;
+    if (await greetedToday(env, userId, day)) continue;
+
+    for (const person of today) {
+      try {
+        await tg.sendMessage(userId, texts.BIRTHDAY_TODAY(person.name, ageOn(day, person.year)), {
+          html: true,
+        });
+        sent += 1;
+      } catch (error) {
+        console.error("Не вдалося привітати", person.name, error);
+      }
+    }
   }
 
   return sent;

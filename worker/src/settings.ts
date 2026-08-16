@@ -19,6 +19,8 @@ export interface UserSettings {
   extraPrompt: string;
   /** Розпізнавати прохання нагадати без команди /remind. */
   autoRemind: boolean;
+  /** Місто для прогнозу погоди. */
+  city: string;
 }
 
 /** Те, що реально лежить у KV: лише явно змінені користувачем поля. */
@@ -35,6 +37,7 @@ export function defaultsFor(env: Env): UserSettings {
     glossary: "",
     extraPrompt: "",
     autoRemind: true,
+    city: env.CITY || "",
   };
 }
 
@@ -55,6 +58,7 @@ function sanitize(stored: StoredSettings, defaults: UserSettings): UserSettings 
     extraPrompt: stored.extraPrompt ?? defaults.extraPrompt,
     // ?? а не ||: false — це осмислений вибір, а не «порожньо».
     autoRemind: stored.autoRemind ?? defaults.autoRemind,
+    city: stored.city ?? defaults.city,
   };
 }
 

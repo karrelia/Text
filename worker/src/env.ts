@@ -18,6 +18,7 @@ export interface Env {
   LLM_MODEL?: string;
   VISION_MODEL?: string;
   TIMEZONE?: string;
+  CITY?: string;
   LLM_TEMPERATURE?: string;
   MAX_AUDIO_SECONDS?: string;
   /** Скільки чекати решту знімків альбому, мс. */
