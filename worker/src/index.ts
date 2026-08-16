@@ -10,7 +10,14 @@
 import { type Env, allowedUserIds } from "./env";
 import { handleCallback } from "./handlers/callbacks";
 import { COMMANDS, handleCommand, parseCommand } from "./handlers/commands";
-import { handleAudioMessage, handlePhotoMessage, maybeRemind, rerun } from "./pipeline";
+import {
+  handleAudioMessage,
+  handleLongText,
+  handlePhotoMessage,
+  maybeRemind,
+  rerun,
+} from "./pipeline";
+import { READ_THRESHOLD } from "./reading";
 import { snoozeKeyboard } from "./keyboards";
 import {
   deleteReminder,
@@ -187,6 +194,13 @@ export async function handleUpdate(env: Env, update: TgUpdate): Promise<void> {
 
     // Написане від руки теж може бути проханням нагадати — без команди.
     if (await maybeRemind(env, tg, message.chat.id, userId, message.text)) return;
+
+    // Довгий текст пересилають не просто так: людина хоче знати, про що це.
+    if (message.text.trim().length >= READ_THRESHOLD) {
+      await handleLongText(env, tg, message.chat.id, userId, message.text.trim());
+      return;
+    }
+
     await tg.sendMessage(message.chat.id, texts.NOT_AUDIO);
     return;
   }

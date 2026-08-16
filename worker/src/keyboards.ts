@@ -156,6 +156,20 @@ export function historyKeyboard(stamps: string[]): InlineKeyboard {
   return { inline_keyboard: rows };
 }
 
+/** Кнопки під переказом пересланого тексту. */
+export function textResultKeyboard(templateLabel = ""): InlineKeyboard {
+  const rows: InlineKeyboard["inline_keyboard"] = [
+    [
+      { text: "🔁 Інша модель", callback_data: `${PREFIX.redoOpen}m` },
+      { text: "💬 Вказівка", callback_data: `${PREFIX.redoOpen}p` },
+    ],
+  ];
+  if (templateLabel) {
+    rows.push([{ text: templateLabel, callback_data: `${PREFIX.redoOpen}t` }]);
+  }
+  return { inline_keyboard: rows };
+}
+
 /** Кнопки під зчитаним знімком. */
 export function photoResultKeyboard(csvLabel: string, templateLabel = ""): InlineKeyboard {
   const rows: InlineKeyboard["inline_keyboard"] = [

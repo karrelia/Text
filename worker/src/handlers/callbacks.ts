@@ -13,7 +13,7 @@ import {
 } from "../keyboards";
 import { OpenRouterError, searchModels, toCsv } from "../openrouter";
 import { type RedoOptions, rerun } from "../pipeline";
-import { PHOTO_TWEAKS, STYLES, TWEAKS, VOICE_TWEAKS } from "../prompts";
+import { PHOTO_TWEAKS, STYLES, TEXT_TWEAKS, TWEAKS, VOICE_TWEAKS } from "../prompts";
 import { findByStamp } from "../history";
 import { fillTemplate, listTemplates, loadTemplate } from "../templates";
 import { nextAfter } from "../recurrence";
@@ -576,7 +576,12 @@ async function openRedoPicker(
   if (kind === "p") {
     // Знімку пропонуємо своє: списком і таблицею тут доречні, а «стисло»
     // на зчитаному документі означало б викинути частину прочитаного.
-    const keys = job.kind === "photo" ? PHOTO_TWEAKS : VOICE_TWEAKS;
+    const keys =
+      job.kind === "photo"
+        ? PHOTO_TWEAKS
+        : job.kind === "text"
+          ? TEXT_TWEAKS
+          : VOICE_TWEAKS;
     await tg.sendMessage(chatId, texts.REDO_PICK_TWEAK, {
       keyboard: tweaksKeyboard(keys, texts.REDO_OWN_NOTE_BUTTON),
     });

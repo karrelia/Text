@@ -111,7 +111,8 @@ export async function loadLastTranscript(env: Env, userId: number): Promise<stri
  * дійсним, тож аудіо й знімок можна завантажити повторно.
  */
 export interface LastJob {
-  kind: "voice" | "photo";
+  kind: "voice" | "photo" | "text";
+  /** Для «text» порожній: джерело лежить у `transcript`, файлу немає. */
   fileId: string;
   /** Решта сторінок альбому. Порожньо — знімок один. */
   fileIds?: string[];
@@ -140,9 +141,12 @@ export async function saveLastJob(
 
 export async function loadLastJob(env: Env, userId: number): Promise<LastJob | null> {
   const job = await env.SETTINGS.get<LastJob>(`job:${userId}`, "json");
-  if (!job || (job.kind !== "voice" && job.kind !== "photo") || !job.fileId) {
-    return null;
-  }
+  if (!job) return null;
+
+  // Текстовому прогону нема чого перезавантажувати — джерело зберігається
+  // разом із ним. Аудіо й знімок без file_id перепрогнати неможливо.
+  if (job.kind === "text") return job.transcript?.trim() ? job : null;
+  if ((job.kind !== "voice" && job.kind !== "photo") || !job.fileId) return null;
   return job;
 }
 

@@ -27,6 +27,9 @@ export const HELP =
   "<b>Фото.</b> Надішли знімок документа, накладної чи показників — зчитаю з " +
   "нього текст. Підпис під фото стає вказівкою: напиши «лише показники» або " +
   "«зроби таблицю», і я так і зроблю.\n\n" +
+  "<b>Текст.</b> Перешли статтю, лист чи довге повідомлення — перекажу суть, " +
+  "головні думки й що з цим робити. Кнопками можна попросити розгорнути, " +
+  "пояснити простіше або перекласти.\n\n" +
   "<b>Не влаштував результат?</b> Під ним є кнопки: перепрогнати іншою " +
   "моделлю чи стилем, перерозпізнати аудіо або дати вказівку («зроби " +
   "списком», «промт англійською»). Надсилати запис ще раз не треба.\n\n" +
@@ -63,12 +66,13 @@ export const NO_ACCESS = (userId: number) =>
   "і встав цей ID. Застосується одразу, deploy не потрібен.";
 
 export const NOT_AUDIO =
-  "Я обробляю тільки аудіо. Надішли голосове повідомлення, аудіофайл " +
-  "або відеокружечок 🎙";
+  "Надішли голосове, аудіофайл, відеокружечок або знімок 🎙\n\n" +
+  "Довгий текст теж підійде — перешли статтю чи лист, і я перекажу суть.";
 
 export const STATUS_TRANSCRIBING = "🎧 Розпізнаю мовлення…";
 export const STATUS_CLEANING = "✨ Причісую текст…";
 export const STATUS_GENERATING = "🎨 Складаю промт…";
+export const STATUS_READING_TEXT = "📖 Читаю…";
 export const STATUS_READING_PHOTO = "🔍 Читаю знімок…";
 export const EMPTY_RESULT = "🤷 У записі не вдалося розібрати жодного слова.";
 export const EMPTY_PHOTO = "🤷 На знімку не вдалося нічого розібрати.";
@@ -321,24 +325,30 @@ export const FIND_NOTHING = (query: string) =>
 
 export const historyList = (
   title: string,
-  items: { when: string; kind: "voice" | "photo"; preview: string }[],
+  items: { when: string; kind: "voice" | "photo" | "text"; preview: string }[],
 ): string =>
   [
     `<b>${title}</b>`,
     "",
     ...items.map(
       (item, index) =>
-        `${index + 1}. ${item.kind === "photo" ? "📷" : "🎙"} <b>${escapeHtml(item.when)}</b>\n` +
+        `${index + 1}. ${kindIcon(item.kind)} <b>${escapeHtml(item.when)}</b>\n` +
         `    ${escapeHtml(item.preview)}`,
     ),
     "",
     "<i>Розгорнути повністю — кнопкою з номером.</i>",
   ].join("\n");
 
+const kindIcon = (kind: "voice" | "photo" | "text") =>
+  kind === "photo" ? "📷" : kind === "text" ? "📖" : "🎙";
+
 export const HISTORY_GONE = "Цей запис уже не зберігається.";
 
-export const historyEntry = (when: string, kind: "voice" | "photo", text: string) =>
-  `${kind === "photo" ? "📷" : "🎙"} <b>${escapeHtml(when)}</b>\n\n${escapeHtml(text)}`;
+export const historyEntry = (
+  when: string,
+  kind: "voice" | "photo" | "text",
+  text: string,
+) => `${kindIcon(kind)} <b>${escapeHtml(when)}</b>\n\n${escapeHtml(text)}`;
 
 // ── Керування нагадуваннями голосом ──────────────────────────────────────────
 

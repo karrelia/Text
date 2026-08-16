@@ -3,9 +3,11 @@
 import { GATHER_MS, type AlbumPage, addPage, gather } from "./album";
 import { type Env, numberVar } from "./env";
 import { remember } from "./history";
+import { digest } from "./reading";
 import {
   photoResultKeyboard,
   reminderKeyboard,
+  textResultKeyboard,
   remindersKeyboard,
   undoKeyboard,
   voiceResultKeyboard,
@@ -190,6 +192,68 @@ export async function runVoice(
   // однієї фрази тут лише заважав би: слово «нагадати» посеред наради
   // створило б випадкове нагадування замість справжніх завдань.
   if (!minutes) await maybeRemind(env, tg, chatId, userId, spoken);
+}
+
+// ── Довгий текст ─────────────────────────────────────────────────────────────
+
+export async function handleLongText(
+  env: Env,
+  tg: TelegramClient,
+  chatId: number,
+  userId: number,
+  text: string,
+): Promise<void> {
+  await clearNoteRequest(env, userId);
+  await runText(env, tg, chatId, userId, {
+    kind: "text",
+    fileId: "",
+    transcript: text,
+  });
+}
+
+/** Прогін пересланого тексту. Джерело зберігається в самому завданні. */
+export async function runText(
+  env: Env,
+  tg: TelegramClient,
+  chatId: number,
+  userId: number,
+  job: LastJob,
+): Promise<void> {
+  const source = job.transcript ?? "";
+  const note = job.note ?? "";
+  const status = await tg.sendMessage(chatId, texts.STATUS_READING_TEXT);
+  await tg.sendChatAction(chatId).catch(() => undefined);
+
+  let summary: string;
+  try {
+    const user = await loadSettings(env, userId);
+    summary = await digest(env, source, user, note);
+  } catch (error) {
+    await tg.editMessage(chatId, status.message_id, describe(error), { html: true });
+    return;
+  }
+
+  const parts = texts.splitForTelegram(summary, MESSAGE_LIMIT);
+  if (parts.length === 0) {
+    await tg.editMessage(chatId, status.message_id, texts.EMPTY_RESULT);
+    return;
+  }
+
+  await tg.editMessage(chatId, status.message_id, parts[0]!);
+  for (const part of parts.slice(1)) {
+    await tg.sendMessage(chatId, part);
+  }
+
+  await saveLastJob(env, userId, job);
+  await saveLastDocument(env, userId, summary);
+  await remember(env, userId, { kind: "text", text: summary });
+
+  await tg.sendMessage(chatId, texts.REDO_HINT(note, await countCost(env, userId)), {
+    html: true,
+    keyboard: textResultKeyboard(
+      (await hasTemplates(env, userId)) ? texts.TEMPLATE_BUTTON : "",
+    ),
+  });
 }
 
 // ── Фото ─────────────────────────────────────────────────────────────────────
@@ -398,6 +462,10 @@ export async function rerun(
 
   if (next.kind === "photo") {
     await runPhoto(env, tg, chatId, userId, next);
+    return;
+  }
+  if (next.kind === "text") {
+    await runText(env, tg, chatId, userId, next);
     return;
   }
   await runVoice(env, tg, chatId, userId, next);

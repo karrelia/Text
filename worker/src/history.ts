@@ -30,13 +30,13 @@ export const PAGE = 8;
 export interface HistoryItem {
   key: string;
   at: number;
-  kind: "voice" | "photo";
+  kind: "voice" | "photo" | "text";
   text: string;
 }
 
 interface StoredItem {
   at: number;
-  kind: "voice" | "photo";
+  kind: "voice" | "photo" | "text";
   text: string;
 }
 
@@ -94,7 +94,7 @@ export function historyKey(userId: number, at: number, text: string): string {
 export async function remember(
   env: Env,
   userId: number,
-  item: { kind: "voice" | "photo"; text: string; sourceId?: string },
+  item: { kind: "voice" | "photo" | "text"; text: string; sourceId?: string },
   at: number = Date.now(),
 ): Promise<void> {
   const text = item.text.trim();
