@@ -5,6 +5,7 @@ import {
   PREFIX,
   PRESET_LLM_MODELS,
   PRESET_VISION_MODELS,
+  expensesKeyboard,
   historyKeyboard,
   listKeyboard,
   modelsKeyboard,
@@ -28,6 +29,7 @@ import {
   saveReminder,
 } from "../reminders";
 import { recent, search, stampOf } from "../history";
+import { loadMonth, monthOf, summarize } from "../expenses";
 import { addItems, itemTail, listId, listNames, loadList } from "../lists";
 import { showList } from "../pipeline";
 import {
@@ -62,6 +64,7 @@ export const COMMANDS = [
   { command: "reminders", description: "Список нагадувань" },
   { command: "autoremind", description: "Нагадування без команди" },
   { command: "list", description: "Списки: покупки, справи" },
+  { command: "expenses", description: "Витрати за місяць" },
   { command: "template", description: "Шаблони документів" },
   { command: "find", description: "Пошук по надиктованому" },
   { command: "history", description: "Останні записи" },
@@ -152,6 +155,21 @@ export async function handleCommand(
     case "history":
       await handleHistory(env, tg, chatId, userId, name === "find" ? args : "");
       return;
+
+    case "expenses": {
+      const timeZone = env.TIMEZONE || DEFAULT_TIMEZONE;
+      const month = monthOf(localDay(new Date(), timeZone));
+      const expenses = await loadMonth(env, userId, month);
+      if (expenses.length === 0) {
+        await tg.sendMessage(chatId, texts.EXPENSES_EMPTY(month), html);
+        return;
+      }
+      await tg.sendMessage(chatId, texts.expensesSummary(month, summarize(expenses)), {
+        html: true,
+        keyboard: expensesKeyboard(texts.EXPENSE_CSV_BUTTON),
+      });
+      return;
+    }
 
     case "list":
     case "lists":

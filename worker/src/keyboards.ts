@@ -24,6 +24,8 @@ export const PREFIX = {
   snoozeDone: "sd:",
   minutesTasks: "mt:",
   listCross: "lc:",
+  expenseAdd: "ea:",
+  expenseCsv: "ec:",
   historyOpen: "ho:",
   templateFill: "tf:",
   csv: "csv:",
@@ -172,7 +174,11 @@ export function textResultKeyboard(templateLabel = ""): InlineKeyboard {
 }
 
 /** Кнопки під зчитаним знімком. */
-export function photoResultKeyboard(csvLabel: string, templateLabel = ""): InlineKeyboard {
+export function photoResultKeyboard(
+  csvLabel: string,
+  templateLabel = "",
+  receiptLabel = "",
+): InlineKeyboard {
   const rows: InlineKeyboard["inline_keyboard"] = [
     [
       { text: "🔁 Інша модель", callback_data: `${PREFIX.redoOpen}v` },
@@ -180,6 +186,9 @@ export function photoResultKeyboard(csvLabel: string, templateLabel = ""): Inlin
     ],
     [{ text: csvLabel, callback_data: `${PREFIX.csv}last` }],
   ];
+  if (receiptLabel) {
+    rows.unshift([{ text: receiptLabel, callback_data: PREFIX.expenseAdd }]);
+  }
   if (templateLabel) {
     rows.push([{ text: templateLabel, callback_data: `${PREFIX.redoOpen}t` }]);
   }
@@ -215,6 +224,11 @@ export function listKeyboard(tails: string[]): InlineKeyboard {
     );
   }
   return { inline_keyboard: rows };
+}
+
+/** Кнопка «таблицею» під підсумком витрат. */
+export function expensesKeyboard(label: string): InlineKeyboard {
+  return { inline_keyboard: [[{ text: label, callback_data: PREFIX.expenseCsv }]] };
 }
 
 /** Сама лише кнопка «повернути» — під прибраним голосом нагадуванням. */

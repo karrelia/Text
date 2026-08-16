@@ -350,6 +350,46 @@ export const historyEntry = (
   text: string,
 ) => `${kindIcon(kind)} <b>${escapeHtml(when)}</b>\n\n${escapeHtml(text)}`;
 
+// ── Витрати ──────────────────────────────────────────────────────────────────
+
+export const EXPENSE_BUTTON = "🧾 У витрати";
+export const EXPENSE_READING = "Розбираю чек…";
+export const EXPENSE_CSV_BUTTON = "📊 Таблицею для Excel";
+
+const hryvnia = (value: number) => `${value.toFixed(2)} грн`;
+
+export const EXPENSE_SAVED = (
+  merchant: string,
+  total: number,
+  category: string,
+  month: number,
+) =>
+  `🧾 <b>${escapeHtml(merchant)}</b> — ${hryvnia(total)}\n` +
+  `Категорія: ${escapeHtml(category)}\n\n` +
+  `<i>За місяць: ${hryvnia(month)}</i>`;
+
+export const EXPENSE_FAILED = (reason: string) =>
+  `Не записав чек: ${escapeHtml(reason)}\n\n` +
+  "Спробуй перечитати знімок іншою моделлю або запиши суму вручну.";
+
+export const EXPENSES_EMPTY = (month: string) =>
+  `📭 За ${escapeHtml(month)} витрат не записано.\n\n` +
+  "Надішли знімок чека — під зчитаним буде кнопка «🧾 У витрати».";
+
+export const expensesSummary = (
+  month: string,
+  summary: { total: number; count: number; byCategory: { category: string; total: number }[] },
+) =>
+  [
+    `💸 <b>Витрати за ${escapeHtml(month)}</b>`,
+    "",
+    ...summary.byCategory.map(
+      (row) => `${escapeHtml(row.category)} — ${hryvnia(row.total)}`,
+    ),
+    "",
+    `<b>Разом: ${hryvnia(summary.total)}</b>  <i>(чеків: ${summary.count})</i>`,
+  ].join("\n");
+
 // ── Списки ───────────────────────────────────────────────────────────────────
 
 export const renderList = (title: string, items: string[]) =>

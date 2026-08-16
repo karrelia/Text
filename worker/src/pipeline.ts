@@ -15,6 +15,7 @@ import {
   planList,
   removeItems,
 } from "./lists";
+import { looksLikeReceipt } from "./expenses";
 import { digest } from "./reading";
 import {
   listKeyboard,
@@ -393,6 +394,9 @@ export async function runPhoto(
     keyboard: photoResultKeyboard(
       texts.CSV_BUTTON,
       (await hasTemplates(env, userId)) ? texts.TEMPLATE_BUTTON : "",
+      // Кнопку показуємо лише там, де на знімку справді видно суму —
+      // під актом чи накладною вона була б зайвою.
+      looksLikeReceipt(text) ? texts.EXPENSE_BUTTON : "",
     ),
   });
 }

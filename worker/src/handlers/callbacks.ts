@@ -15,6 +15,15 @@ import {
 import { OpenRouterError, searchModels, toCsv } from "../openrouter";
 import { type RedoOptions, rerun } from "../pipeline";
 import { PHOTO_TWEAKS, STYLES, TEXT_TWEAKS, TWEAKS, VOICE_TWEAKS } from "../prompts";
+import {
+  ExpenseError,
+  expensesToCsv,
+  loadMonth,
+  monthOf,
+  readReceipt,
+  saveExpense,
+  summarize,
+} from "../expenses";
 import { findByStamp } from "../history";
 import {
   itemTail,
@@ -37,7 +46,7 @@ import {
   stashDeleted,
   takeDeleted,
 } from "../reminders";
-import { DEFAULT_TIMEZONE, formatLocal } from "../timezone";
+import { DEFAULT_TIMEZONE, formatLocal, localDay } from "../timezone";
 import { renderReminderList } from "./commands";
 import {
   askForNote,
@@ -165,6 +174,16 @@ export async function handleCallback(
       chatId,
       data.slice(PREFIX.templateFill.length),
     );
+    return;
+  }
+
+  if (data.startsWith(PREFIX.expenseAdd)) {
+    await addExpense(env, tg, query, userId, chatId);
+    return;
+  }
+
+  if (data.startsWith(PREFIX.expenseCsv)) {
+    await expensesCsv(env, tg, query, userId, chatId);
     return;
   }
 
@@ -357,6 +376,75 @@ async function fillFromTemplate(
   // Заповнений бланк стає останнім документом: звідси його можна одразу
   // перенести в таблицю тією ж кнопкою, що й зчитане з фото.
   await saveLastDocument(env, userId, filled);
+}
+
+// ── Витрати ──────────────────────────────────────────────────────────────────
+
+/** Розбирає щойно зчитаний чек і додає його до витрат місяця. */
+async function addExpense(
+  env: Env,
+  tg: TelegramClient,
+  query: TgCallbackQuery,
+  userId: number,
+  chatId: number | undefined,
+): Promise<void> {
+  if (chatId === undefined) {
+    await tg.answerCallback(query.id, texts.STALE_CHOICE, true);
+    return;
+  }
+
+  const document = await loadLastDocument(env, userId);
+  if (!document.trim()) {
+    await tg.answerCallback(query.id, texts.CSV_NOTHING, true);
+    return;
+  }
+
+  await tg.answerCallback(query.id, texts.EXPENSE_READING);
+
+  const timeZone = env.TIMEZONE || DEFAULT_TIMEZONE;
+  const month = monthOf(localDay(new Date(), timeZone));
+
+  try {
+    const user = await loadSettings(env, userId);
+    const receipt = await readReceipt(env, user, document);
+    await saveExpense(env, userId, month, receipt);
+
+    const summary = summarize(await loadMonth(env, userId, month));
+    await tg.sendMessage(
+      chatId,
+      texts.EXPENSE_SAVED(receipt.merchant, receipt.total, receipt.category, summary.total),
+      { html: true },
+    );
+  } catch (error) {
+    const reason = error instanceof ExpenseError ? error.message : String(error);
+    await tg.sendMessage(chatId, texts.EXPENSE_FAILED(reason), { html: true });
+  }
+}
+
+async function expensesCsv(
+  env: Env,
+  tg: TelegramClient,
+  query: TgCallbackQuery,
+  userId: number,
+  chatId: number | undefined,
+): Promise<void> {
+  if (chatId === undefined) {
+    await tg.answerCallback(query.id, texts.STALE_CHOICE, true);
+    return;
+  }
+
+  const timeZone = env.TIMEZONE || DEFAULT_TIMEZONE;
+  const month = monthOf(localDay(new Date(), timeZone));
+  const expenses = await loadMonth(env, userId, month);
+
+  if (expenses.length === 0) {
+    await tg.answerCallback(query.id, texts.CSV_NOTHING, true);
+    return;
+  }
+
+  await tg.answerCallback(query.id, texts.CSV_BUILDING);
+  const csv = expensesToCsv(expenses, (at) => formatLocal(new Date(at), timeZone));
+  await tg.sendDocument(chatId, `vytraty-${month}.csv`, csv, texts.CSV_CAPTION, true);
 }
 
 /** Викреслює пункт списку й перемальовує решту в тому самому повідомленні. */
