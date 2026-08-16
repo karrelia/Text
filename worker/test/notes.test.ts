@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Env } from "../src/env";
 import { PREFIX } from "../src/keyboards";
-import { TWEAKS, buildPhotoSystemPrompt, buildSystemPrompt, styleForNote } from "../src/prompts";
+import {
+  PHOTO_TWEAKS,
+  TWEAKS,
+  buildPhotoSystemPrompt,
+  buildSystemPrompt,
+  styleForNote,
+} from "../src/prompts";
 import type { TgCallbackQuery, TgUpdate } from "../src/telegram";
 
 const transcribe = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => "ее сказане слово"));
@@ -264,6 +270,36 @@ describe("вказівка в системному промпті", () => {
     const prompt = buildPhotoSystemPrompt("", "зроби таблицею");
     expect(prompt).toContain("зроби таблицею");
     expect(prompt).toContain("[нерозбірливо]");
+  });
+});
+
+// Знімок англійського паспорта приладу чи польської накладної має читатись
+// без словника в руках.
+describe("іншомовний текст на знімку", () => {
+  it("типово перекладається українською", () => {
+    const prompt = buildPhotoSystemPrompt();
+    expect(prompt).toContain("передавай українською");
+    expect(prompt).toContain("Український текст лишай як є");
+  });
+
+  // Перекладений артикул чи номер приладу — це вже не той прилад.
+  it("назви, номери й коди лишаються недоторканими", () => {
+    const prompt = buildPhotoSystemPrompt();
+    expect(prompt).toContain("Не перекладай і не змінюй власні назви");
+    expect(prompt).toContain("артикули");
+  });
+
+  it("кнопка «мовою оригіналу» скасовує переклад", () => {
+    expect(PHOTO_TWEAKS).toContain("original");
+    expect(TWEAKS.original!.text).toContain("Нічого не перекладай");
+  });
+
+  // Пункт про мову — не з переліку 1–4, тож обгортка вказівки мусить
+  // прямо казати, що мову відповіді теж визначає прохання автора.
+  it("вказівка головніша й за правило мови", () => {
+    const prompt = buildPhotoSystemPrompt("", TWEAKS.original!.text);
+    expect(prompt).toContain("правила подачі та мови");
+    expect(prompt).toContain("якою мовою");
   });
 });
 

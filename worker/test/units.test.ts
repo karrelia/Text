@@ -478,7 +478,7 @@ describe("читання документів із фото", () => {
   it("нерозбірливе не додумується", () => {
     const prompt = buildPhotoSystemPrompt();
     expect(prompt).toContain("[нерозбірливо]");
-    expect(prompt).toContain("не додумуй за автора");
+    expect(prompt).toContain("за автора не додумуй");
   });
 
   it("словник і підпис під фото додаються", () => {
