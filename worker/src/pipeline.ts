@@ -3,8 +3,21 @@
 import { GATHER_MS, type AlbumPage, addPage, gather } from "./album";
 import { type Env, numberVar } from "./env";
 import { remember } from "./history";
+import {
+  ListError,
+  addItems,
+  clearList,
+  itemTail,
+  listNames,
+  listTitle,
+  loadList,
+  mentionsList,
+  planList,
+  removeItems,
+} from "./lists";
 import { digest } from "./reading";
 import {
+  listKeyboard,
   photoResultKeyboard,
   reminderKeyboard,
   textResultKeyboard,
@@ -488,6 +501,11 @@ export async function maybeRemind(
   userId: number,
   text: string,
 ): Promise<boolean> {
+  if (mentionsList(text)) {
+    const user = await loadSettings(env, userId);
+    if (user.autoRemind) return await handleList(env, tg, chatId, userId, text, user);
+  }
+
   const manage = manageIntent(text);
   const intent = manage === "none" ? reminderIntent(text) : "none";
   if (manage === "none" && intent === "none") return false;
@@ -533,6 +551,86 @@ export async function maybeRemind(
     }
     throw error;
   }
+}
+
+/**
+ * «Додай до покупок молоко і хліб», «що в покупках», «купив молоко».
+ *
+ * Гілка стоїть перед нагадуваннями навмисно: «додай до покупок» містить
+ * «додай», і без цього порядку прохання могло б потрапити в розбір
+ * нагадувань, де для нього немає часу — і зникнути з помилкою «не бачу коли».
+ */
+export async function handleList(
+  env: Env,
+  tg: TelegramClient,
+  chatId: number,
+  userId: number,
+  text: string,
+  user: UserSettings,
+): Promise<boolean> {
+  try {
+    const known = await listNames(env, userId);
+    const plan = await planList(env, user, text, known);
+
+    if (plan.action === "add") {
+      const added = await addItems(env, userId, plan.list, plan.items);
+      const items = await loadList(env, userId, plan.list);
+      await tg.sendMessage(chatId, texts.LIST_ADDED(plan.list, added, items.length), {
+        html: true,
+        keyboard: listKeyboard(items.map((item) => itemTail(item.key))),
+      });
+      return true;
+    }
+
+    if (plan.action === "done") {
+      const removed = await removeItems(env, userId, plan.list, plan.items);
+      if (removed.length === 0) {
+        await tg.sendMessage(chatId, texts.LIST_NOT_THERE(plan.items), { html: true });
+        return true;
+      }
+      await showList(env, tg, chatId, userId, plan.list, texts.LIST_CROSSED(removed));
+      return true;
+    }
+
+    if (plan.action === "clear") {
+      const count = await clearList(env, userId, plan.list);
+      await tg.sendMessage(chatId, texts.LIST_CLEARED(plan.list, count), { html: true });
+      return true;
+    }
+
+    await showList(env, tg, chatId, userId, plan.list);
+    return true;
+  } catch (error) {
+    if (error instanceof ListError) {
+      await tg.sendMessage(chatId, texts.LIST_FAILED(error.message), { html: true });
+      return true;
+    }
+    throw error;
+  }
+}
+
+export async function showList(
+  env: Env,
+  tg: TelegramClient,
+  chatId: number,
+  userId: number,
+  list: string,
+  prefix = "",
+): Promise<void> {
+  const items = await loadList(env, userId, list);
+  if (items.length === 0) {
+    await tg.sendMessage(chatId, prefix + texts.LIST_EMPTY(list), { html: true });
+    return;
+  }
+
+  await tg.sendMessage(
+    chatId,
+    prefix + texts.renderList(listTitle(list), items.map((item) => item.text)),
+    {
+      html: true,
+      keyboard: listKeyboard(items.map((item) => itemTail(item.key))),
+    },
+  );
 }
 
 /**

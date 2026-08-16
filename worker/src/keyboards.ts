@@ -23,6 +23,7 @@ export const PREFIX = {
   snooze: "sn:",
   snoozeDone: "sd:",
   minutesTasks: "mt:",
+  listCross: "lc:",
   historyOpen: "ho:",
   templateFill: "tf:",
   csv: "csv:",
@@ -194,6 +195,26 @@ export function tweaksKeyboard(keys: string[], ownLabel: string): InlineKeyboard
     .filter((key) => TWEAKS[key])
     .map((key) => [{ text: TWEAKS[key]!.title, callback_data: PREFIX.redoNote + key }]);
   return { inline_keyboard: [...rows, [{ text: ownLabel, callback_data: PREFIX.redoAsk }]] };
+}
+
+/**
+ * Кнопки під списком: по одній на пункт, підписані номером із тексту.
+ * Найчастіша дія зі списком — викреслити куплене, і робити це голосом
+ * щоразу довше, ніж торкнутись.
+ */
+export function listKeyboard(tails: string[]): InlineKeyboard {
+  const rows: InlineKeyboard["inline_keyboard"] = [];
+  const fitting = tails.map((tail) => PREFIX.listCross + tail).filter(fits);
+
+  for (let index = 0; index < fitting.length; index += 4) {
+    rows.push(
+      fitting.slice(index, index + 4).map((data, offset) => ({
+        text: `✅ ${index + offset + 1}`,
+        callback_data: data,
+      })),
+    );
+  }
+  return { inline_keyboard: rows };
 }
 
 /** Сама лише кнопка «повернути» — під прибраним голосом нагадуванням. */

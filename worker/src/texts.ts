@@ -350,6 +350,54 @@ export const historyEntry = (
   text: string,
 ) => `${kindIcon(kind)} <b>${escapeHtml(when)}</b>\n\n${escapeHtml(text)}`;
 
+// ── Списки ───────────────────────────────────────────────────────────────────
+
+export const renderList = (title: string, items: string[]) =>
+  [
+    `🛒 <b>${escapeHtml(title)}</b> (${items.length})`,
+    "",
+    ...items.map((item, index) => `${index + 1}. ${escapeHtml(item)}`),
+    "",
+    "<i>Викреслити — кнопкою з номером.</i>",
+  ].join("\n");
+
+export const LIST_EMPTY = (list: string) =>
+  `📭 Список «${escapeHtml(list)}» порожній.`;
+
+export const LIST_ADDED = (list: string, added: string[], total: number) =>
+  added.length === 0
+    ? `Це вже є в списку «${escapeHtml(list)}».`
+    : `✅ Додав до «${escapeHtml(list)}»: ${added.map(escapeHtml).join(", ")}\n\n` +
+      `<i>Усього в списку: ${total}</i>`;
+
+export const LIST_CROSSED = (removed: string[]) =>
+  `✅ Викреслив: ${removed.map(escapeHtml).join(", ")}\n\n`;
+
+export const LIST_NOT_THERE = (items: string[]) =>
+  `Не знайшов у списку: ${items.map(escapeHtml).join(", ")}`;
+
+export const LIST_CLEARED = (list: string, count: number) =>
+  `🧹 Очистив «${escapeHtml(list)}» — прибрано пунктів: ${count}.`;
+
+export const LIST_FAILED = (reason: string) =>
+  `Не вийшло зі списком: ${escapeHtml(reason)}\n\n` +
+  "Спробуй простіше: «додай до покупок молоко і хліб».";
+
+export const LISTS_NONE =
+  "<b>Списки</b>\n\n" +
+  "Скажи або напиши «додай до покупок молоко і хліб» — і список заведеться сам.\n\n" +
+  "Далі: «що в покупках», «купив молоко», «очисти покупки».\n" +
+  "Списки будь-які: покупки, справи, ідеї.";
+
+export const listsOverview = (names: string[]) =>
+  [
+    `<b>Списки (${names.length})</b>`,
+    "",
+    ...names.map((name) => `🛒 ${escapeHtml(name)}`),
+    "",
+    "Показати: <code>/list покупки</code>",
+  ].join("\n");
+
 // ── Керування нагадуваннями голосом ──────────────────────────────────────────
 
 export const MANAGE_EMPTY = "📭 Нагадувань немає — міняти нічого.";

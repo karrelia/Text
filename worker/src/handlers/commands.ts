@@ -6,6 +6,7 @@ import {
   PRESET_LLM_MODELS,
   PRESET_VISION_MODELS,
   historyKeyboard,
+  listKeyboard,
   modelsKeyboard,
   providersKeyboard,
   remindersKeyboard,
@@ -27,6 +28,8 @@ import {
   saveReminder,
 } from "../reminders";
 import { recent, search, stampOf } from "../history";
+import { addItems, itemTail, listId, listNames, loadList } from "../lists";
+import { showList } from "../pipeline";
 import {
   MAX_BODY_LENGTH,
   MAX_TEMPLATES,
@@ -58,6 +61,7 @@ export const COMMANDS = [
   { command: "remind", description: "Створити нагадування" },
   { command: "reminders", description: "Список нагадувань" },
   { command: "autoremind", description: "Нагадування без команди" },
+  { command: "list", description: "Списки: покупки, справи" },
   { command: "template", description: "Шаблони документів" },
   { command: "find", description: "Пошук по надиктованому" },
   { command: "history", description: "Останні записи" },
@@ -147,6 +151,11 @@ export async function handleCommand(
     case "find":
     case "history":
       await handleHistory(env, tg, chatId, userId, name === "find" ? args : "");
+      return;
+
+    case "list":
+    case "lists":
+      await handleLists(env, tg, chatId, userId, args);
       return;
 
     case "template":
@@ -515,6 +524,51 @@ async function handleHistory(
     ),
     { html: true, keyboard: historyKeyboard(items.map((item) => stampOf(item.key))) },
   );
+}
+
+/**
+ * `/list` — які списки є, `/list покупки` — показати, `/list покупки молоко,
+ * хліб` — дописати. Голосом те саме робиться без команди.
+ */
+async function handleLists(
+  env: Env,
+  tg: TelegramClient,
+  chatId: number,
+  userId: number,
+  args: string,
+): Promise<void> {
+  const html = { html: true } as const;
+  const trimmed = args.trim();
+
+  if (!trimmed) {
+    const names = await listNames(env, userId);
+    await tg.sendMessage(
+      chatId,
+      names.length === 0 ? texts.LISTS_NONE : texts.listsOverview(names),
+      html,
+    );
+    return;
+  }
+
+  const space = trimmed.search(/\s/);
+  const name = listId(space === -1 ? trimmed : trimmed.slice(0, space));
+  const rest = space === -1 ? "" : trimmed.slice(space + 1).trim();
+
+  if (!rest) {
+    await showList(env, tg, chatId, userId, name);
+    return;
+  }
+
+  const items = rest
+    .split(/[,;\n]+|\s+і\s+|\s+та\s+/u)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const added = await addItems(env, userId, name, items);
+  const all = await loadList(env, userId, name);
+  await tg.sendMessage(chatId, texts.LIST_ADDED(name, added, all.length), {
+    html: true,
+    keyboard: listKeyboard(all.map((item) => itemTail(item.key))),
+  });
 }
 
 /**

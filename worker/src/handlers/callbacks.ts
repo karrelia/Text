@@ -5,6 +5,7 @@ import {
   PREFIX,
   PRESET_LLM_MODELS,
   PRESET_VISION_MODELS,
+  listKeyboard,
   modelsKeyboard,
   reminderKeyboard,
   templatesKeyboard,
@@ -15,6 +16,13 @@ import { OpenRouterError, searchModels, toCsv } from "../openrouter";
 import { type RedoOptions, rerun } from "../pipeline";
 import { PHOTO_TWEAKS, STYLES, TEXT_TWEAKS, TWEAKS, VOICE_TWEAKS } from "../prompts";
 import { findByStamp } from "../history";
+import {
+  itemTail,
+  keyFromItemTail,
+  listTitle,
+  loadList,
+  removeByKey,
+} from "../lists";
 import { fillTemplate, listTemplates, loadTemplate } from "../templates";
 import { nextAfter } from "../recurrence";
 import {
@@ -157,6 +165,11 @@ export async function handleCallback(
       chatId,
       data.slice(PREFIX.templateFill.length),
     );
+    return;
+  }
+
+  if (data.startsWith(PREFIX.listCross)) {
+    await crossOff(env, tg, query, userId, chatId, data.slice(PREFIX.listCross.length));
     return;
   }
 
@@ -344,6 +357,45 @@ async function fillFromTemplate(
   // Заповнений бланк стає останнім документом: звідси його можна одразу
   // перенести в таблицю тією ж кнопкою, що й зчитане з фото.
   await saveLastDocument(env, userId, filled);
+}
+
+/** Викреслює пункт списку й перемальовує решту в тому самому повідомленні. */
+async function crossOff(
+  env: Env,
+  tg: TelegramClient,
+  query: TgCallbackQuery,
+  userId: number,
+  chatId: number | undefined,
+  tail: string,
+): Promise<void> {
+  const messageId = query.message?.message_id;
+  if (chatId === undefined || messageId === undefined) {
+    await tg.answerCallback(query.id, texts.STALE_CHOICE, true);
+    return;
+  }
+
+  // Ключ складаємо з id того, хто натиснув — чужий список не зачепиш.
+  const removed = await removeByKey(env, keyFromItemTail(userId, tail));
+  if (!removed) {
+    await tg.answerCallback(query.id, texts.STALE_CHOICE, true);
+    return;
+  }
+
+  await tg.answerCallback(query.id, `✅ ${removed}`);
+
+  const list = tail.split(":")[0] ?? "";
+  const items = await loadList(env, userId, list);
+  await tg.editMessage(
+    chatId,
+    messageId,
+    items.length === 0
+      ? texts.LIST_EMPTY(list)
+      : texts.renderList(listTitle(list), items.map((item) => item.text)),
+    {
+      html: true,
+      keyboard: listKeyboard(items.map((item) => itemTail(item.key))),
+    },
+  );
 }
 
 /** Розгортає знайдений у пошуку запис повністю. */
