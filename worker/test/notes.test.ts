@@ -278,8 +278,21 @@ describe("вказівка в системному промпті", () => {
 describe("іншомовний текст на знімку", () => {
   it("типово перекладається українською", () => {
     const prompt = buildPhotoSystemPrompt();
-    expect(prompt).toContain("передавай українською");
+    expect(prompt).toContain("іншомовний перекладай");
     expect(prompt).toContain("Український текст лишай як є");
+  });
+
+  // Модель найсильніше тримається початку промпта, і перша спроба це
+  // показала: вимога стояла десятим пунктом із дванадцяти й не спрацювала.
+  it("вимога мови стоїть на початку, а не серед дрібних правил", () => {
+    const prompt = buildPhotoSystemPrompt();
+    const language = prompt.indexOf("МОВА ВІДПОВІДІ");
+    expect(language).toBeGreaterThanOrEqual(0);
+    expect(language).toBeLessThan(prompt.indexOf("Як подавати структуру"));
+  });
+
+  it("нагадується ще раз наприкінці, де сказано, що надсилати", () => {
+    expect(buildPhotoSystemPrompt()).toContain("зчитаний текст, українською");
   });
 
   // Перекладений артикул чи номер приладу — це вже не той прилад.
