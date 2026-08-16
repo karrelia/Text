@@ -7,6 +7,7 @@ import {
   PRESET_VISION_MODELS,
   modelsKeyboard,
   reminderKeyboard,
+  templatesKeyboard,
   stylesKeyboard,
   tweaksKeyboard,
 } from "../keyboards";
@@ -14,6 +15,7 @@ import { OpenRouterError, searchModels, toCsv } from "../openrouter";
 import { type RedoOptions, rerun } from "../pipeline";
 import { PHOTO_TWEAKS, STYLES, TWEAKS, VOICE_TWEAKS } from "../prompts";
 import { findByStamp } from "../history";
+import { fillTemplate, listTemplates, loadTemplate } from "../templates";
 import { nextAfter } from "../recurrence";
 import {
   ReminderError,
@@ -35,6 +37,7 @@ import {
   loadLastJob,
   loadLastTranscript,
   loadSettings,
+  saveLastDocument,
   updateSettings,
 } from "../settings";
 import { MESSAGE_LIMIT, type TelegramClient, type TgCallbackQuery } from "../telegram";
@@ -142,6 +145,18 @@ export async function handleCallback(
 
   if (data.startsWith(PREFIX.minutesTasks)) {
     await tasksFromMinutes(env, tg, query, userId, chatId);
+    return;
+  }
+
+  if (data.startsWith(PREFIX.templateFill)) {
+    await fillFromTemplate(
+      env,
+      tg,
+      query,
+      userId,
+      chatId,
+      data.slice(PREFIX.templateFill.length),
+    );
     return;
   }
 
@@ -260,6 +275,75 @@ async function tasksFromMinutes(
     const reason = error instanceof ReminderError ? error.message : String(error);
     await tg.sendMessage(chatId, texts.REMIND_FAILED(reason), { html: true });
   }
+}
+
+/**
+ * Заповнює обраний бланк останнім результатом.
+ *
+ * Джерело беремо за видом останнього прогону: після голосового це
+ * розшифровка, після знімка — зчитане з нього. Так той самий бланк
+ * заповнюється і з надиктованого, і з фотографії паперового акта.
+ */
+async function fillFromTemplate(
+  env: Env,
+  tg: TelegramClient,
+  query: TgCallbackQuery,
+  userId: number,
+  chatId: number | undefined,
+  id: string,
+): Promise<void> {
+  if (chatId === undefined) {
+    await tg.answerCallback(query.id, texts.STALE_CHOICE, true);
+    return;
+  }
+
+  const template = await loadTemplate(env, userId, id);
+  if (!template) {
+    await tg.answerCallback(query.id, texts.STALE_CHOICE, true);
+    return;
+  }
+
+  const job = await loadLastJob(env, userId);
+  const source =
+    job?.kind === "photo"
+      ? await loadLastDocument(env, userId)
+      : await loadLastTranscript(env, userId);
+
+  if (!source.trim()) {
+    await tg.answerCallback(query.id, texts.TEMPLATE_NOTHING_TO_FILL, true);
+    return;
+  }
+
+  await tg.answerCallback(query.id, texts.TEMPLATE_FILLING);
+  const status = await tg.sendMessage(chatId, texts.TEMPLATE_FILLING);
+  await tg.sendChatAction(chatId).catch(() => undefined);
+
+  let filled: string;
+  try {
+    const user = await loadSettings(env, userId);
+    filled = await fillTemplate(env, template.body, source, user);
+  } catch (error) {
+    const reason = error instanceof OpenRouterError ? error.message : String(error);
+    await tg.editMessage(chatId, status.message_id, texts.ERROR_GENERIC(reason), {
+      html: true,
+    });
+    return;
+  }
+
+  const parts = texts.splitForTelegram(filled, MESSAGE_LIMIT);
+  if (parts.length === 0) {
+    await tg.editMessage(chatId, status.message_id, texts.EMPTY_RESULT);
+    return;
+  }
+
+  await tg.editMessage(chatId, status.message_id, parts[0]!);
+  for (const part of parts.slice(1)) {
+    await tg.sendMessage(chatId, part);
+  }
+
+  // Заповнений бланк стає останнім документом: звідси його можна одразу
+  // перенести в таблицю тією ж кнопкою, що й зчитане з фото.
+  await saveLastDocument(env, userId, filled);
 }
 
 /** Розгортає знайдений у пошуку запис повністю. */
@@ -473,6 +557,18 @@ async function openRedoPicker(
   if (kind === "s") {
     await tg.sendMessage(chatId, texts.REDO_PICK_STYLE, {
       keyboard: stylesKeyboard(user.style, PREFIX.redoStyle),
+    });
+    return;
+  }
+
+  if (kind === "t") {
+    const templates = await listTemplates(env, userId);
+    if (templates.length === 0) {
+      await tg.sendMessage(chatId, texts.TEMPLATE_NONE, { html: true });
+      return;
+    }
+    await tg.sendMessage(chatId, texts.TEMPLATE_PICK, {
+      keyboard: templatesKeyboard(templates),
     });
     return;
   }

@@ -39,6 +39,7 @@ export const HELP =
   "/remind — створити нагадування\n" +
   "/autoremind — чи створювати нагадування без команди\n" +
   "/reminders — список нагадувань\n" +
+  "/template — шаблони документів: бланк + надиктоване = готовий папір\n" +
   "/find — пошук по надиктованому (<code>/find Гаркушенці</code>)\n" +
   "/history — останні записи\n" +
   "/usage — витрати й залишок на OpenRouter\n" +
@@ -242,6 +243,60 @@ export const MINUTES_TASKS_SAVED = (items: { what: string; when: string }[]) =>
     "",
     "<i>Прибрати зайве — /reminders</i>",
   ].join("\n");
+
+// ── Шаблони документів ───────────────────────────────────────────────────────
+
+export const TEMPLATE_BUTTON = "📄 За шаблоном";
+export const TEMPLATE_FILLING = "Заповнюю бланк…";
+export const TEMPLATE_PICK = "Який бланк заповнити щойно сказаним?";
+
+export const TEMPLATE_NONE =
+  "<b>Шаблони документів</b>\n\n" +
+  "Свій бланк плюс надиктовані обставини — і документ готовий.\n\n" +
+  "Додати:\n" +
+  "<code>/template акт\nАКТ обстеження\nДата: \nАдреса: \nЛічильник № \nВисновок: </code>\n\n" +
+  "Перший рядок після команди — назва, решта — сам бланк. Потім надиктуйте " +
+  "обставини й натисніть «📄 За шаблоном» під розшифровкою.";
+
+export const templateList = (items: { title: string; lines: number }[]) =>
+  [
+    `<b>Шаблони (${items.length})</b>`,
+    "",
+    ...items.map((item) => `📄 ${escapeHtml(item.title)} — ${item.lines} ряд.`),
+    "",
+    "Показати один: <code>/template акт</code>",
+    "Прибрати: <code>/template - акт</code>",
+  ].join("\n");
+
+export const templateShown = (title: string, body: string) =>
+  `📄 <b>${escapeHtml(title)}</b>\n\n<code>${escapeHtml(body)}</code>`;
+
+export const TEMPLATE_SAVED = (title: string) =>
+  `✅ Шаблон «${escapeHtml(title)}» збережено.\n\n` +
+  "Надиктуйте обставини й натисніть «📄 За шаблоном» під розшифровкою.";
+
+export const TEMPLATE_REMOVED = (title: string) =>
+  `🗑 Шаблон «${escapeHtml(title)}» прибрано.`;
+
+export const TEMPLATE_UNKNOWN = (name: string) =>
+  `Немає шаблону «${escapeHtml(name)}».\n\nПерелік — <code>/template</code>`;
+
+export const TEMPLATE_NAME_TOO_LONG =
+  "Назва задовга — вона має вміститись у кнопку. Дай коротшу, на слово-два.";
+
+export const TEMPLATE_TOO_LONG = (limit: number) =>
+  `Бланк задовгий: більше за ${limit} символів. Він щоразу їде в запиті до ` +
+  "моделі, тож має лишатися бланком, а не книжкою.";
+
+export const TEMPLATE_LIMIT = (limit: number) =>
+  `Більше за ${limit} шаблонів не тримаю. Прибери зайвий: <code>/template - назва</code>`;
+
+export const TEMPLATE_NEEDS_BODY =
+  "Після назви з нового рядка має йти сам бланк.\n\n" +
+  "<code>/template акт\nАКТ обстеження\nДата: \nАдреса: </code>";
+
+export const TEMPLATE_NOTHING_TO_FILL =
+  "Нема з чого заповнювати. Спершу надиктуйте обставини або надішліть знімок.";
 
 // ── Історія ──────────────────────────────────────────────────────────────────
 

@@ -24,6 +24,7 @@ export const PREFIX = {
   snoozeDone: "sd:",
   minutesTasks: "mt:",
   historyOpen: "ho:",
+  templateFill: "tf:",
   csv: "csv:",
   /**
    * Відкрити перелік для повторного прогону: "m" — модель, "s" — стиль,
@@ -106,7 +107,7 @@ export function stylesKeyboard(
  * Кнопки під розшифровкою: перепрогнати іншою моделлю, стилем або наново.
  * Під протоколом додається ще одна — зібрати нагадування з доручень.
  */
-export function voiceResultKeyboard(tasksLabel = ""): InlineKeyboard {
+export function voiceResultKeyboard(tasksLabel = "", templateLabel = ""): InlineKeyboard {
   const rows: InlineKeyboard["inline_keyboard"] = [
     [
       { text: "🔁 Інша модель", callback_data: `${PREFIX.redoOpen}m` },
@@ -117,10 +118,28 @@ export function voiceResultKeyboard(tasksLabel = ""): InlineKeyboard {
       { text: "🎧 Перерозпізнати", callback_data: PREFIX.redoStt },
     ],
   ];
+  if (templateLabel) {
+    rows.push([{ text: templateLabel, callback_data: `${PREFIX.redoOpen}t` }]);
+  }
   if (tasksLabel) {
     rows.unshift([{ text: tasksLabel, callback_data: PREFIX.minutesTasks }]);
   }
   return { inline_keyboard: rows };
+}
+
+/**
+ * Перелік своїх бланків. Ідентифікатор роблять із назви, тож довгі назви
+ * у кнопку не влазять — такі просто не показуємо, їх видно в /template.
+ */
+export function templatesKeyboard(
+  templates: { id: string; title: string }[],
+): InlineKeyboard {
+  return {
+    inline_keyboard: templates
+      .map((template) => ({ template, data: PREFIX.templateFill + template.id }))
+      .filter((item) => fits(item.data))
+      .map((item) => [{ text: `📄 ${item.template.title}`, callback_data: item.data }]),
+  };
 }
 
 /** Кнопки під знайденим у пошуку: розгорнути запис повністю. */
@@ -138,16 +157,18 @@ export function historyKeyboard(stamps: string[]): InlineKeyboard {
 }
 
 /** Кнопки під зчитаним знімком. */
-export function photoResultKeyboard(csvLabel: string): InlineKeyboard {
-  return {
-    inline_keyboard: [
-      [
-        { text: "🔁 Інша модель", callback_data: `${PREFIX.redoOpen}v` },
-        { text: "💬 Вказівка", callback_data: `${PREFIX.redoOpen}p` },
-      ],
-      [{ text: csvLabel, callback_data: `${PREFIX.csv}last` }],
+export function photoResultKeyboard(csvLabel: string, templateLabel = ""): InlineKeyboard {
+  const rows: InlineKeyboard["inline_keyboard"] = [
+    [
+      { text: "🔁 Інша модель", callback_data: `${PREFIX.redoOpen}v` },
+      { text: "💬 Вказівка", callback_data: `${PREFIX.redoOpen}p` },
     ],
-  };
+    [{ text: csvLabel, callback_data: `${PREFIX.csv}last` }],
+  ];
+  if (templateLabel) {
+    rows.push([{ text: templateLabel, callback_data: `${PREFIX.redoOpen}t` }]);
+  }
+  return { inline_keyboard: rows };
 }
 
 /**

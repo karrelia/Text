@@ -33,6 +33,7 @@ import {
 } from "./telegram";
 import * as texts from "./texts";
 import { DEFAULT_TIMEZONE, formatLocal, localDay } from "./timezone";
+import { hasTemplates } from "./templates";
 import { type PhotoInput, readPhoto } from "./vision";
 
 // ── Голосове ─────────────────────────────────────────────────────────────────
@@ -163,7 +164,12 @@ export async function runVoice(
   const minutes = styleKind(chosenStyle) === "minutes";
   await tg.sendMessage(chatId, texts.REDO_HINT(note, await countCost(env, userId)), {
     html: true,
-    keyboard: voiceResultKeyboard(minutes ? texts.MINUTES_TASKS_BUTTON : ""),
+    keyboard: voiceResultKeyboard(
+      minutes ? texts.MINUTES_TASKS_BUTTON : "",
+      // Кнопку показуємо лише тим, у кого бланки є: решті вона щоразу
+      // відкривала б порожній перелік.
+      (await hasTemplates(env, userId)) ? texts.TEMPLATE_BUTTON : "",
+    ),
   });
 
   // У протоколі кнопка збирає всі доручення разом, тож звичайний розбір
@@ -293,7 +299,10 @@ export async function runPhoto(
   await remember(env, userId, { kind: "photo", text, sourceId: job.fileId });
   await tg.sendMessage(chatId, texts.REDO_HINT(job.note ?? "", await countCost(env, userId)), {
     html: true,
-    keyboard: photoResultKeyboard(texts.CSV_BUTTON),
+    keyboard: photoResultKeyboard(
+      texts.CSV_BUTTON,
+      (await hasTemplates(env, userId)) ? texts.TEMPLATE_BUTTON : "",
+    ),
   });
 }
 

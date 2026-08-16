@@ -27,6 +27,16 @@ import {
   saveReminder,
 } from "../reminders";
 import { recent, search, stampOf } from "../history";
+import {
+  MAX_BODY_LENGTH,
+  MAX_TEMPLATES,
+  deleteTemplate,
+  listTemplates,
+  loadTemplate,
+  nameTooLong,
+  saveTemplate,
+  templateId,
+} from "../templates";
 import { DEFAULT_TIMEZONE, formatLocal, localDay } from "../timezone";
 import { STYLES, selectHintTerms } from "../prompts";
 import {
@@ -48,6 +58,7 @@ export const COMMANDS = [
   { command: "remind", description: "Створити нагадування" },
   { command: "reminders", description: "Список нагадувань" },
   { command: "autoremind", description: "Нагадування без команди" },
+  { command: "template", description: "Шаблони документів" },
   { command: "find", description: "Пошук по надиктованому" },
   { command: "history", description: "Останні записи" },
   { command: "usage", description: "Витрати на OpenRouter" },
@@ -136,6 +147,11 @@ export async function handleCommand(
     case "find":
     case "history":
       await handleHistory(env, tg, chatId, userId, name === "find" ? args : "");
+      return;
+
+    case "template":
+    case "templates":
+      await handleTemplate(env, tg, chatId, userId, args);
       return;
 
     case "autoremind": {
@@ -499,6 +515,90 @@ async function handleHistory(
     ),
     { html: true, keyboard: historyKeyboard(items.map((item) => stampOf(item.key))) },
   );
+}
+
+/**
+ * `/template` — перелік, `/template акт` — показати, `/template - акт` —
+ * прибрати, `/template акт\n<бланк>` — зберегти.
+ *
+ * Назва й бланк розділені переносом рядка, а не пробілом: назва буває з
+ * кількох слів, а вгадувати, де вона скінчилась, — вірний спосіб щоразу
+ * різати не там.
+ */
+async function handleTemplate(
+  env: Env,
+  tg: TelegramClient,
+  chatId: number,
+  userId: number,
+  args: string,
+): Promise<void> {
+  const html = { html: true } as const;
+
+  if (!args.trim()) {
+    const templates = await listTemplates(env, userId);
+    if (templates.length === 0) {
+      await tg.sendMessage(chatId, texts.TEMPLATE_NONE, html);
+      return;
+    }
+    await tg.sendMessage(
+      chatId,
+      texts.templateList(
+        templates.map((item) => ({
+          title: item.title,
+          lines: item.body.split("\n").length,
+        })),
+      ),
+      html,
+    );
+    return;
+  }
+
+  const removal = /^-\s*(.+)$/s.exec(args.trim());
+  if (removal?.[1]) {
+    const name = removal[1].trim();
+    const existing = await loadTemplate(env, userId, templateId(name));
+    if (!existing) {
+      await tg.sendMessage(chatId, texts.TEMPLATE_UNKNOWN(name), html);
+      return;
+    }
+    await deleteTemplate(env, userId, existing.id);
+    await tg.sendMessage(chatId, texts.TEMPLATE_REMOVED(existing.title), html);
+    return;
+  }
+
+  const breakAt = args.indexOf("\n");
+  const title = (breakAt === -1 ? args : args.slice(0, breakAt)).trim();
+  const body = breakAt === -1 ? "" : args.slice(breakAt + 1).trim();
+
+  if (!body) {
+    // Без тіла це прохання показати наявний бланк, а не зберегти порожній.
+    const existing = await loadTemplate(env, userId, templateId(title));
+    if (existing) {
+      await tg.sendMessage(chatId, texts.templateShown(existing.title, existing.body), html);
+      return;
+    }
+    await tg.sendMessage(chatId, texts.TEMPLATE_NEEDS_BODY, html);
+    return;
+  }
+
+  if (nameTooLong(title)) {
+    await tg.sendMessage(chatId, texts.TEMPLATE_NAME_TOO_LONG, html);
+    return;
+  }
+  if (body.length > MAX_BODY_LENGTH) {
+    await tg.sendMessage(chatId, texts.TEMPLATE_TOO_LONG(MAX_BODY_LENGTH), html);
+    return;
+  }
+
+  const templates = await listTemplates(env, userId);
+  const replacing = templates.some((item) => item.id === templateId(title));
+  if (!replacing && templates.length >= MAX_TEMPLATES) {
+    await tg.sendMessage(chatId, texts.TEMPLATE_LIMIT(MAX_TEMPLATES), html);
+    return;
+  }
+
+  const saved = await saveTemplate(env, userId, title, body);
+  await tg.sendMessage(chatId, texts.TEMPLATE_SAVED(saved.title), html);
 }
 
 /** Рядок для переліку: перший рядок запису, обрізаний до одного погляду. */
