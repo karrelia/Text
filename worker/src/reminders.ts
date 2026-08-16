@@ -2,7 +2,7 @@
 
 import type { Env } from "./env";
 import { OpenRouterError, complete, stripWrapper } from "./openrouter";
-import { buildReminderPrompt } from "./prompts";
+import { buildReminderPrompt, buildTasksPrompt } from "./prompts";
 import type { UserSettings } from "./settings";
 import { type Repeat, parseRepeat } from "./recurrence";
 import { DEFAULT_TIMEZONE, formatLocal, localNow, zonedToUtc } from "./timezone";
@@ -208,6 +208,78 @@ export async function planReminder(
     what: parsed.what,
     ...(parsed.repeat ? { repeat: parsed.repeat } : {}),
   };
+}
+
+/**
+ * Доручення з протоколу — по нагадуванню на кожне.
+ *
+ * Мовчки пропускаємо все, чому модель не знайшла терміну: у протоколі
+ * половина доручень без дати, і вигадувати її означало б розсипати по
+ * календарю вигадані зобов'язання.
+ */
+export interface PlannedTask {
+  dueAt: number;
+  what: string;
+}
+
+export function parseTasksReply(raw: string): { when: string; what: string }[] {
+  const cleaned = stripWrapper(raw);
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start === -1 || end <= start) return [];
+
+  let payload: { tasks?: unknown };
+  try {
+    payload = JSON.parse(cleaned.slice(start, end + 1));
+  } catch {
+    return [];
+  }
+
+  if (!Array.isArray(payload.tasks)) return [];
+  return payload.tasks
+    .filter(
+      (item): item is { when: string; what: string } =>
+        Boolean(item) &&
+        typeof (item as { when?: unknown }).when === "string" &&
+        typeof (item as { what?: unknown }).what === "string" &&
+        Boolean((item as { what: string }).what.trim()),
+    )
+    .map((item) => ({ when: item.when, what: item.what.trim() }));
+}
+
+export async function planTasks(
+  env: Env,
+  user: UserSettings,
+  text: string,
+  now: Date = new Date(),
+): Promise<PlannedTask[]> {
+  const timeZone = env.TIMEZONE || DEFAULT_TIMEZONE;
+  const { stamp, weekday } = localNow(now, timeZone);
+
+  let raw: string;
+  try {
+    raw = await complete(
+      env,
+      user.llmModel,
+      [
+        { role: "system", content: buildTasksPrompt(stamp, weekday) },
+        { role: "user", content: `<minutes>\n${text}\n</minutes>` },
+      ],
+      0,
+    );
+  } catch (error) {
+    throw error instanceof OpenRouterError ? new ReminderError(error.message) : error;
+  }
+
+  const planned: PlannedTask[] = [];
+  for (const task of parseTasksReply(raw)) {
+    const due = zonedToUtc(task.when, timeZone);
+    // Минулий час — це не привід зривати весь розбір: решта доручень
+    // цілком робочі, а про пропущені скажемо числом.
+    if (!due || due.getTime() <= now.getTime()) continue;
+    planned.push({ dueAt: due.getTime(), what: task.what });
+  }
+  return planned;
 }
 
 // ── Сховище ──────────────────────────────────────────────────────────────────

@@ -368,9 +368,9 @@ describe("режими генерації промтів", () => {
   const GENERATE = ["video", "image", "expand"];
   const EDIT = ["clean", "verbatim", "formal", "raw"];
 
-  it("кожен стиль віднесений до одного з двох режимів", () => {
+  it("кожен стиль віднесений до одного з трьох режимів", () => {
     for (const [key, style] of Object.entries(STYLES)) {
-      expect(["edit", "generate"]).toContain(style.kind);
+      expect(["edit", "generate", "minutes"]).toContain(style.kind);
       expect(styleKind(key)).toBe(style.kind);
     }
   });

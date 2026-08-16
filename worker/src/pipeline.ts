@@ -2,6 +2,7 @@
 
 import { GATHER_MS, type AlbumPage, addPage, gather } from "./album";
 import { type Env, numberVar } from "./env";
+import { remember } from "./history";
 import { photoResultKeyboard, reminderKeyboard, voiceResultKeyboard } from "./keyboards";
 import { OpenRouterError, processTranscript, takeLastCost } from "./openrouter";
 import { buildWhisperHint, styleForNote, styleKind } from "./prompts";
@@ -99,10 +100,12 @@ export async function runVoice(
   let cleaned: string;
   let spoken = "";
   let transcript = job.transcript ?? "";
+  let chosenStyle = "";
 
   try {
     const user = await loadSettings(env, userId);
     const style = styleForNote(user.style, note);
+    chosenStyle = style;
 
     if (!reusing) {
       const file = await tg.downloadFile(job.fileId);
@@ -135,6 +138,11 @@ export async function runVoice(
     spoken = styleKind(style) === "generate" ? transcript : cleaned;
     await saveLastTranscript(env, userId, spoken);
     await saveLastJob(env, userId, { ...job, transcript });
+    await remember(env, userId, {
+      kind: "voice",
+      text: spoken,
+      sourceId: job.fileId,
+    });
   } catch (error) {
     await tg.editMessage(chatId, status.message_id, describe(error), { html: true });
     return;
@@ -152,11 +160,16 @@ export async function runVoice(
   }
   await sendWhole(tg, chatId, cleaned, parts.length, "rozshyfrovka");
 
+  const minutes = styleKind(chosenStyle) === "minutes";
   await tg.sendMessage(chatId, texts.REDO_HINT(note, await countCost(env, userId)), {
     html: true,
-    keyboard: voiceResultKeyboard(),
+    keyboard: voiceResultKeyboard(minutes ? texts.MINUTES_TASKS_BUTTON : ""),
   });
-  await maybeRemind(env, tg, chatId, userId, spoken);
+
+  // У протоколі кнопка збирає всі доручення разом, тож звичайний розбір
+  // однієї фрази тут лише заважав би: слово «нагадати» посеред наради
+  // створило б випадкове нагадування замість справжніх завдань.
+  if (!minutes) await maybeRemind(env, tg, chatId, userId, spoken);
 }
 
 // ── Фото ─────────────────────────────────────────────────────────────────────
@@ -277,6 +290,7 @@ export async function runPhoto(
   // друга перенесе в таблицю для Excel.
   await saveLastDocument(env, userId, text);
   await saveLastJob(env, userId, job);
+  await remember(env, userId, { kind: "photo", text, sourceId: job.fileId });
   await tg.sendMessage(chatId, texts.REDO_HINT(job.note ?? "", await countCost(env, userId)), {
     html: true,
     keyboard: photoResultKeyboard(texts.CSV_BUTTON),

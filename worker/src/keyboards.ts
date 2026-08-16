@@ -22,6 +22,8 @@ export const PREFIX = {
   /** Відкласти те, що щойно спрацювало: "sn:<хвилини>". */
   snooze: "sn:",
   snoozeDone: "sd:",
+  minutesTasks: "mt:",
+  historyOpen: "ho:",
   csv: "csv:",
   /**
    * Відкрити перелік для повторного прогону: "m" — модель, "s" — стиль,
@@ -100,20 +102,39 @@ export function stylesKeyboard(
   };
 }
 
-/** Кнопки під розшифровкою: перепрогнати іншою моделлю, стилем або наново. */
-export function voiceResultKeyboard(): InlineKeyboard {
-  return {
-    inline_keyboard: [
-      [
-        { text: "🔁 Інша модель", callback_data: `${PREFIX.redoOpen}m` },
-        { text: "✍️ Інший стиль", callback_data: `${PREFIX.redoOpen}s` },
-      ],
-      [
-        { text: "💬 Вказівка", callback_data: `${PREFIX.redoOpen}p` },
-        { text: "🎧 Перерозпізнати", callback_data: PREFIX.redoStt },
-      ],
+/**
+ * Кнопки під розшифровкою: перепрогнати іншою моделлю, стилем або наново.
+ * Під протоколом додається ще одна — зібрати нагадування з доручень.
+ */
+export function voiceResultKeyboard(tasksLabel = ""): InlineKeyboard {
+  const rows: InlineKeyboard["inline_keyboard"] = [
+    [
+      { text: "🔁 Інша модель", callback_data: `${PREFIX.redoOpen}m` },
+      { text: "✍️ Інший стиль", callback_data: `${PREFIX.redoOpen}s` },
     ],
-  };
+    [
+      { text: "💬 Вказівка", callback_data: `${PREFIX.redoOpen}p` },
+      { text: "🎧 Перерозпізнати", callback_data: PREFIX.redoStt },
+    ],
+  ];
+  if (tasksLabel) {
+    rows.unshift([{ text: tasksLabel, callback_data: PREFIX.minutesTasks }]);
+  }
+  return { inline_keyboard: rows };
+}
+
+/** Кнопки під знайденим у пошуку: розгорнути запис повністю. */
+export function historyKeyboard(stamps: string[]): InlineKeyboard {
+  const rows: InlineKeyboard["inline_keyboard"] = [];
+  for (let index = 0; index < stamps.length; index += 4) {
+    rows.push(
+      stamps.slice(index, index + 4).map((stamp, offset) => ({
+        text: `${index + offset + 1}`,
+        callback_data: PREFIX.historyOpen + stamp,
+      })),
+    );
+  }
+  return { inline_keyboard: rows };
 }
 
 /** Кнопки під зчитаним знімком. */

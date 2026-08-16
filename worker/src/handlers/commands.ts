@@ -5,6 +5,7 @@ import {
   PREFIX,
   PRESET_LLM_MODELS,
   PRESET_VISION_MODELS,
+  historyKeyboard,
   modelsKeyboard,
   providersKeyboard,
   remindersKeyboard,
@@ -25,6 +26,7 @@ import {
   planReminder,
   saveReminder,
 } from "../reminders";
+import { recent, search, stampOf } from "../history";
 import { DEFAULT_TIMEZONE, formatLocal, localDay } from "../timezone";
 import { STYLES, selectHintTerms } from "../prompts";
 import {
@@ -46,6 +48,8 @@ export const COMMANDS = [
   { command: "remind", description: "Створити нагадування" },
   { command: "reminders", description: "Список нагадувань" },
   { command: "autoremind", description: "Нагадування без команди" },
+  { command: "find", description: "Пошук по надиктованому" },
+  { command: "history", description: "Останні записи" },
   { command: "usage", description: "Витрати на OpenRouter" },
   { command: "glossary", description: "Імена й терміни" },
   { command: "prompt", description: "Додаткові побажання" },
@@ -127,6 +131,11 @@ export async function handleCommand(
 
     case "reminders":
       await handleReminders(env, tg, chatId, userId);
+      return;
+
+    case "find":
+    case "history":
+      await handleHistory(env, tg, chatId, userId, name === "find" ? args : "");
       return;
 
     case "autoremind": {
@@ -451,6 +460,51 @@ async function handleReminders(
     return;
   }
   await tg.sendMessage(chatId, view.text, { html: true, keyboard: view.keyboard });
+}
+
+/**
+ * `/history` — останнє, `/find слово` — пошук. Команди різні, а показ один,
+ * бо результат в обох випадках той самий: перелік записів із кнопками.
+ */
+async function handleHistory(
+  env: Env,
+  tg: TelegramClient,
+  chatId: number,
+  userId: number,
+  query: string,
+): Promise<void> {
+  const items = query.trim()
+    ? await search(env, userId, query)
+    : await recent(env, userId);
+
+  if (items.length === 0) {
+    await tg.sendMessage(
+      chatId,
+      query.trim() ? texts.FIND_NOTHING(query) : texts.HISTORY_EMPTY,
+      { html: true },
+    );
+    return;
+  }
+
+  const timeZone = env.TIMEZONE || DEFAULT_TIMEZONE;
+  await tg.sendMessage(
+    chatId,
+    texts.historyList(
+      query.trim() ? `Знайшов: ${items.length}` : "Останні записи",
+      items.map((item) => ({
+        when: formatLocal(new Date(item.at), timeZone),
+        kind: item.kind,
+        preview: preview(item.text),
+      })),
+    ),
+    { html: true, keyboard: historyKeyboard(items.map((item) => stampOf(item.key))) },
+  );
+}
+
+/** Рядок для переліку: перший рядок запису, обрізаний до одного погляду. */
+function preview(text: string, limit = 140): string {
+  const flat = text.trim().split(/\s+/).join(" ");
+  return flat.length > limit ? `${flat.slice(0, limit)}…` : flat;
 }
 
 /**

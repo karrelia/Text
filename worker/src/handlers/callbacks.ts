@@ -13,13 +13,16 @@ import {
 import { OpenRouterError, searchModels, toCsv } from "../openrouter";
 import { type RedoOptions, rerun } from "../pipeline";
 import { PHOTO_TWEAKS, STYLES, TWEAKS, VOICE_TWEAKS } from "../prompts";
+import { findByStamp } from "../history";
 import { nextAfter } from "../recurrence";
 import {
+  ReminderError,
   deleteReminder,
   keyFromTail,
   keyTail,
   loadFired,
   loadReminder,
+  planTasks,
   saveReminder,
   stashDeleted,
   takeDeleted,
@@ -30,10 +33,11 @@ import {
   askForNote,
   loadLastDocument,
   loadLastJob,
+  loadLastTranscript,
   loadSettings,
   updateSettings,
 } from "../settings";
-import type { TelegramClient, TgCallbackQuery } from "../telegram";
+import { MESSAGE_LIMIT, type TelegramClient, type TgCallbackQuery } from "../telegram";
 import * as texts from "../texts";
 
 export async function handleCallback(
@@ -136,6 +140,16 @@ export async function handleCallback(
     return;
   }
 
+  if (data.startsWith(PREFIX.minutesTasks)) {
+    await tasksFromMinutes(env, tg, query, userId, chatId);
+    return;
+  }
+
+  if (data.startsWith(PREFIX.historyOpen)) {
+    await openHistory(env, tg, query, userId, chatId, data.slice(PREFIX.historyOpen.length));
+    return;
+  }
+
   if (data.startsWith(PREFIX.snooze)) {
     await snoozeReminder(env, tg, query, userId, data.slice(PREFIX.snooze.length));
     return;
@@ -190,6 +204,94 @@ export async function handleCallback(
   }
 
   await tg.answerCallback(query.id, texts.STALE_CHOICE, true);
+}
+
+// ── Протокол та історія ──────────────────────────────────────────────────────
+
+/**
+ * Ставить нагадування на всі доручення з протоколу, у яких названо термін.
+ *
+ * Окремий виклик моделі, а не даром: протокол ми вже маємо, але дати в
+ * ньому записані людською мовою («до четверга», «до 20-го»), і перевести
+ * їх у конкретний час без моделі не вийде.
+ */
+async function tasksFromMinutes(
+  env: Env,
+  tg: TelegramClient,
+  query: TgCallbackQuery,
+  userId: number,
+  chatId: number | undefined,
+): Promise<void> {
+  if (chatId === undefined) {
+    await tg.answerCallback(query.id, texts.STALE_CHOICE, true);
+    return;
+  }
+
+  const minutes = await loadLastTranscript(env, userId);
+  if (!minutes.trim()) {
+    await tg.answerCallback(query.id, texts.REDO_NOTHING, true);
+    return;
+  }
+
+  await tg.answerCallback(query.id, texts.MINUTES_TASKS_WORKING);
+  await tg.sendChatAction(chatId).catch(() => undefined);
+
+  const timeZone = env.TIMEZONE || DEFAULT_TIMEZONE;
+  try {
+    const user = await loadSettings(env, userId);
+    const tasks = await planTasks(env, user, minutes);
+
+    if (tasks.length === 0) {
+      await tg.sendMessage(chatId, texts.MINUTES_NO_TASKS, { html: true });
+      return;
+    }
+
+    const saved: { what: string; when: string }[] = [];
+    for (const task of tasks) {
+      await saveReminder(env, userId, chatId, task.what, task.dueAt);
+      saved.push({
+        what: task.what,
+        when: formatLocal(new Date(task.dueAt), timeZone),
+      });
+    }
+
+    await tg.sendMessage(chatId, texts.MINUTES_TASKS_SAVED(saved), { html: true });
+  } catch (error) {
+    const reason = error instanceof ReminderError ? error.message : String(error);
+    await tg.sendMessage(chatId, texts.REMIND_FAILED(reason), { html: true });
+  }
+}
+
+/** Розгортає знайдений у пошуку запис повністю. */
+async function openHistory(
+  env: Env,
+  tg: TelegramClient,
+  query: TgCallbackQuery,
+  userId: number,
+  chatId: number | undefined,
+  stamp: string,
+): Promise<void> {
+  if (chatId === undefined) {
+    await tg.answerCallback(query.id, texts.STALE_CHOICE, true);
+    return;
+  }
+
+  const item = await findByStamp(env, userId, stamp);
+  if (!item) {
+    await tg.answerCallback(query.id, texts.HISTORY_GONE, true);
+    return;
+  }
+
+  await tg.answerCallback(query.id);
+  const timeZone = env.TIMEZONE || DEFAULT_TIMEZONE;
+  const body = texts.historyEntry(
+    formatLocal(new Date(item.at), timeZone),
+    item.kind,
+    item.text,
+  );
+  for (const part of texts.splitForTelegram(body, MESSAGE_LIMIT)) {
+    await tg.sendMessage(chatId, part, { html: true });
+  }
 }
 
 // ── Нагадування ──────────────────────────────────────────────────────────────
