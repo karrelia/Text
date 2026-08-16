@@ -2,7 +2,7 @@
 
 import type { Env } from "./env";
 import { OpenRouterError, complete, stripWrapper } from "./openrouter";
-import { buildReminderPrompt, buildTasksPrompt } from "./prompts";
+import { buildManagePrompt, buildReminderPrompt, buildTasksPrompt } from "./prompts";
 import type { UserSettings } from "./settings";
 import { type Repeat, parseRepeat } from "./recurrence";
 import { DEFAULT_TIMEZONE, formatLocal, localNow, zonedToUtc } from "./timezone";
@@ -129,6 +129,167 @@ export function reminderIntent(text: string): ReminderIntent {
 
 export function looksLikeReminder(text: string): boolean {
   return reminderIntent(text) !== "none";
+}
+
+// ── Керування наявними нагадуваннями ─────────────────────────────────────────
+
+/**
+ * Дієслова, після яких ідеться про вже створене нагадування.
+ *
+ * Свідомо лише наказовий спосіб. Інфінітиви («прибрати», «перенести») сюди
+ * не входять, бо вони природно трапляються в самому завданні: «нагадай
+ * перенести нараду» — це створення нагадування, а не перенесення його.
+ */
+const MANAGE_VERBS = new Set([
+  "прибери",
+  "приберіть",
+  "видали",
+  "видаліть",
+  "убери",
+  "уберіть",
+  "скасуй",
+  "скасуйте",
+  "відміни",
+  "відміність",
+  "отмени",
+  "удали",
+  "перенеси",
+  "перенесіть",
+  "посунь",
+  "посуньте",
+  "відклади",
+  "відкладіть",
+  "змісти",
+]);
+
+const LIST_VERBS = new Set([
+  "покажи",
+  "покажіть",
+  "перелічи",
+  "перелічіть",
+  "перелік",
+  "список",
+  "нагадування",
+]);
+
+const LIST_TRIGGERS = [/як[іi]\s+(в\s+мене\s+)?нагад/iu, /що\s+в\s+мене\s+нагад/iu];
+
+/** Чи згадуються нагадування взагалі. Корені, бо мова відмінює все. */
+function mentionsReminder(text: string): boolean {
+  return /нагад|напом/iu.test(text);
+}
+
+export type ManageIntent = "list" | "change" | "none";
+
+/**
+ * Прохання про наявні нагадування, а не про нове.
+ *
+ * Перевірка, як і для створення, без звернення до моделі: вона йде на
+ * кожному повідомленні. Наявність слова «нагадай» перетягує на бік
+ * створення — воно однозначне, а «прибери» без нього двозначним не буває.
+ */
+export function manageIntent(text: string): ManageIntent {
+  const trimmed = text.trim();
+  if (!trimmed || !mentionsReminder(trimmed)) return "none";
+
+  const words = trimmed.toLowerCase().split(/[^\p{L}]+/u);
+  if (words.some((word) => STRONG_WORDS.has(word))) return "none";
+
+  if (words.some((word) => MANAGE_VERBS.has(word))) return "change";
+
+  if (
+    LIST_TRIGGERS.some((pattern) => pattern.test(trimmed)) ||
+    (words.some((word) => LIST_VERBS.has(word) && word !== "нагадування") &&
+      mentionsReminder(trimmed))
+  ) {
+    return "list";
+  }
+
+  return "none";
+}
+
+export interface PlannedChange {
+  action: "delete" | "move";
+  index: number;
+  dueAt?: number;
+}
+
+export function parseManageReply(raw: string, total: number): PlannedChange {
+  const cleaned = stripWrapper(raw);
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start === -1 || end <= start) {
+    throw new ReminderError("Не зрозумів, яке нагадування маєш на увазі.");
+  }
+
+  let payload: { action?: string; index?: number; when?: string; error?: string };
+  try {
+    payload = JSON.parse(cleaned.slice(start, end + 1));
+  } catch {
+    throw new ReminderError("Не зрозумів, яке нагадування маєш на увазі.");
+  }
+
+  if (payload.error) throw new ReminderError(payload.error);
+  if (payload.action !== "delete" && payload.action !== "move") {
+    throw new ReminderError("Не зрозумів, що зробити з нагадуванням.");
+  }
+
+  const index = Number(payload.index);
+  if (!Number.isInteger(index) || index < 1 || index > total) {
+    throw new ReminderError("Не зрозумів, яке саме нагадування маєш на увазі.");
+  }
+
+  return {
+    action: payload.action,
+    index: index - 1,
+    ...(payload.when ? { when: payload.when } : {}),
+  } as PlannedChange & { when?: string };
+}
+
+export async function planChange(
+  env: Env,
+  user: UserSettings,
+  text: string,
+  reminders: Reminder[],
+  now: Date = new Date(),
+): Promise<PlannedChange> {
+  const timeZone = env.TIMEZONE || DEFAULT_TIMEZONE;
+  const { stamp, weekday } = localNow(now, timeZone);
+  const list = reminders.map(
+    (reminder) =>
+      `${formatLocal(new Date(reminder.dueAt), timeZone)} — ${reminder.text}` +
+      (reminder.repeat ? " (повторюване)" : ""),
+  );
+
+  let raw: string;
+  try {
+    raw = await complete(
+      env,
+      user.llmModel,
+      [
+        { role: "system", content: buildManagePrompt(stamp, weekday, list) },
+        { role: "user", content: `<request>\n${text}\n</request>` },
+      ],
+      0,
+    );
+  } catch (error) {
+    throw error instanceof OpenRouterError ? new ReminderError(error.message) : error;
+  }
+
+  const change = parseManageReply(raw, reminders.length) as PlannedChange & {
+    when?: string;
+  };
+  if (change.action === "delete") return { action: "delete", index: change.index };
+
+  const due = change.when ? zonedToUtc(change.when, timeZone) : null;
+  if (!due) throw new ReminderError("Не зрозумів, на коли перенести.");
+  if (due.getTime() <= now.getTime()) {
+    throw new ReminderError(
+      `Цей час уже минув: ${formatLocal(due, timeZone)}. Уточни, на коли перенести.`,
+    );
+  }
+
+  return { action: "move", index: change.index, dueAt: due.getTime() };
 }
 
 // ── Розбір фрази ─────────────────────────────────────────────────────────────

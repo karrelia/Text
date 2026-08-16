@@ -180,12 +180,16 @@ export const REMINDER_FIRES_REPEAT = (text: string, when: string, repeat: Repeat
   `<i>наступне — ${escapeHtml(when)}</i>`;
 
 export const AUTO_REMIND_ON =
-  "⏰ Тепер створюю нагадування без команди.\n\n" +
-  "Просто скажи або напиши «нагадай завтра о 9 здати звіт» — або додай " +
-  "слово «нагадування» в кінці надиктованого. Команда /remind теж працює.";
+  "⏰ Тепер працюю з нагадуваннями без команди.\n\n" +
+  "Створити: «нагадай завтра о 9 здати звіт» — або просто слово " +
+  "«нагадування» в кінці надиктованого.\n" +
+  "Прибрати: «прибери нагадування про показники».\n" +
+  "Перенести: «перенеси нагадування про звіт на четвер».\n" +
+  "Побачити: «покажи нагадування».";
 
 export const AUTO_REMIND_OFF =
-  "🔇 Більше не створюю нагадування самостійно. Тільки за командою /remind.";
+  "🔇 Більше не чіпаю нагадування самостійно — ані створюю, ані міняю. " +
+  "Тільки за командами /remind і /reminders.";
 
 export const REMIND_FAILED = (reason: string) => `🤔 ${escapeHtml(reason)}`;
 
@@ -335,6 +339,21 @@ export const HISTORY_GONE = "Цей запис уже не зберігаєть�
 
 export const historyEntry = (when: string, kind: "voice" | "photo", text: string) =>
   `${kind === "photo" ? "📷" : "🎙"} <b>${escapeHtml(when)}</b>\n\n${escapeHtml(text)}`;
+
+// ── Керування нагадуваннями голосом ──────────────────────────────────────────
+
+export const MANAGE_EMPTY = "📭 Нагадувань немає — міняти нічого.";
+
+export const MANAGE_DELETED = (what: string) =>
+  `🗑 Прибрав: <b>${escapeHtml(what)}</b>`;
+
+export const MANAGE_MOVED = (what: string, from: string, to: string) =>
+  `📅 Перенесено: <b>${escapeHtml(what)}</b>\n\n` +
+  `<s>${escapeHtml(from)}</s> → <b>${escapeHtml(to)}</b>`;
+
+export const MANAGE_FAILED = (reason: string) =>
+  `Не змінив нагадування: ${escapeHtml(reason)}\n\n` +
+  "Спробуй назвати його точніше — або зроби це кнопками в /reminders.";
 
 export const SNOOZE_DONE_BUTTON = "✅ Готово";
 export const REMINDER_ACKED = "✅ Готово";

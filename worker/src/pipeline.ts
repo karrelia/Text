@@ -3,17 +3,31 @@
 import { GATHER_MS, type AlbumPage, addPage, gather } from "./album";
 import { type Env, numberVar } from "./env";
 import { remember } from "./history";
-import { photoResultKeyboard, reminderKeyboard, voiceResultKeyboard } from "./keyboards";
+import {
+  photoResultKeyboard,
+  reminderKeyboard,
+  remindersKeyboard,
+  undoKeyboard,
+  voiceResultKeyboard,
+} from "./keyboards";
 import { OpenRouterError, processTranscript, takeLastCost } from "./openrouter";
 import { buildWhisperHint, styleForNote, styleKind } from "./prompts";
 import {
+  type ManageIntent,
   ReminderError,
   createReminder,
+  deleteReminder,
   keyTail,
+  listReminders,
+  manageIntent,
+  planChange,
   reminderIntent,
+  saveReminder,
+  stashDeleted,
 } from "./reminders";
 import {
   type LastJob,
+  type UserSettings,
   addSpending,
   clearNoteRequest,
   loadSettings,
@@ -406,11 +420,19 @@ export async function maybeRemind(
   userId: number,
   text: string,
 ): Promise<boolean> {
-  const intent = reminderIntent(text);
-  if (intent === "none") return false;
+  const manage = manageIntent(text);
+  const intent = manage === "none" ? reminderIntent(text) : "none";
+  if (manage === "none" && intent === "none") return false;
 
   const user = await loadSettings(env, userId);
+  // Один вимикач на все, що бот робить із нагадуваннями без команди:
+  // і створення, і зміну. Інакше «без команди» означало б різне для
+  // двох сусідніх дій.
   if (!user.autoRemind) return false;
+
+  if (manage !== "none") {
+    return await manageByVoice(env, tg, chatId, userId, text, manage, user);
+  }
 
   try {
     const { key, dueAt, what, repeat } = await createReminder(
@@ -440,6 +462,89 @@ export async function maybeRemind(
       }
       console.log("Схоже на нагадування, але без часу:", error.message);
       return false;
+    }
+    throw error;
+  }
+}
+
+/**
+ * «Прибери нагадування про показники», «перенеси нараду на четвер».
+ *
+ * Список підбираємо самі, а моделі даємо його пронумерованим і питаємо лише
+ * номер: так вона не може вигадати нагадування, якого немає, а ми прибираємо
+ * рівно те, що показали б людині в /reminders.
+ */
+async function manageByVoice(
+  env: Env,
+  tg: TelegramClient,
+  chatId: number,
+  userId: number,
+  text: string,
+  intent: Exclude<ManageIntent, "none">,
+  user: UserSettings,
+): Promise<boolean> {
+  const reminders = await listReminders(env, userId);
+  const timeZone = env.TIMEZONE || DEFAULT_TIMEZONE;
+
+  if (reminders.length === 0) {
+    await tg.sendMessage(chatId, texts.MANAGE_EMPTY);
+    return true;
+  }
+
+  if (intent === "list") {
+    await tg.sendMessage(
+      chatId,
+      texts.renderReminders(
+        reminders.map((reminder) => ({
+          when: formatLocal(new Date(reminder.dueAt), timeZone),
+          text: reminder.text,
+          ...(reminder.repeat ? { repeat: reminder.repeat } : {}),
+        })),
+      ),
+      {
+        html: true,
+        keyboard: remindersKeyboard(reminders.map((reminder) => keyTail(reminder.key))),
+      },
+    );
+    return true;
+  }
+
+  try {
+    const change = await planChange(env, user, text, reminders);
+    const target = reminders[change.index]!;
+
+    if (change.action === "delete") {
+      // Той самий відкат, що й у кнопки зі списку: голосом промахнутись
+      // легше, ніж пальцем.
+      await stashDeleted(env, target);
+      await deleteReminder(env, target.key);
+      await tg.sendMessage(chatId, texts.MANAGE_DELETED(target.text), {
+        html: true,
+        keyboard: undoKeyboard(texts.REMINDER_UNDO_BUTTON),
+      });
+      return true;
+    }
+
+    const was = formatLocal(new Date(target.dueAt), timeZone);
+    await deleteReminder(env, target.key);
+    const key = await saveReminder(
+      env,
+      userId,
+      chatId,
+      target.text,
+      change.dueAt!,
+      target.repeat,
+    );
+    await tg.sendMessage(
+      chatId,
+      texts.MANAGE_MOVED(target.text, was, formatLocal(new Date(change.dueAt!), timeZone)),
+      { html: true, keyboard: reminderKeyboard(keyTail(key)) },
+    );
+    return true;
+  } catch (error) {
+    if (error instanceof ReminderError) {
+      await tg.sendMessage(chatId, texts.MANAGE_FAILED(error.message), { html: true });
+      return true;
     }
     throw error;
   }

@@ -182,6 +182,11 @@ export function tweaksKeyboard(keys: string[], ownLabel: string): InlineKeyboard
   return { inline_keyboard: [...rows, [{ text: ownLabel, callback_data: PREFIX.redoAsk }]] };
 }
 
+/** Сама лише кнопка «повернути» — під прибраним голосом нагадуванням. */
+export function undoKeyboard(label: string): InlineKeyboard {
+  return { inline_keyboard: [[{ text: label, callback_data: PREFIX.reminderUndo }]] };
+}
+
 /** Кнопка «прибрати» під щойно створеним нагадуванням. */
 export function reminderKeyboard(tail: string): InlineKeyboard {
   return {
