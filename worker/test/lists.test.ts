@@ -32,7 +32,7 @@ vi.mock("../src/openrouter", async (importOriginal) => ({
   complete,
 }));
 
-const { maybeRemind } = await import("../src/pipeline");
+const { handleSpoken } = await import("../src/pipeline");
 const { handleCallback } = await import("../src/handlers/callbacks");
 
 class FakeKV {
@@ -100,7 +100,7 @@ beforeEach(() => {
   complete.mockResolvedValue('{"action":"add","list":"покупки","items":["молоко"]}');
 });
 
-const говорить = (text: string) => maybeRemind(env, tg.client as never, CHAT, USER, text);
+const говорить = (text: string) => handleSpoken(env, tg.client as never, CHAT, USER, text);
 
 const press = (data: string): TgCallbackQuery =>
   ({

@@ -40,8 +40,7 @@ import {
 } from "../daily";
 import { loadMonth, monthOf, summarize } from "../expenses";
 import { translate } from "../reading";
-import { addItems, itemTail, listId, listNames, loadList } from "../lists";
-import { showList } from "../pipeline";
+import { addItems, itemTail, listId, listNames, loadList, showList } from "../lists";
 import {
   MAX_BODY_LENGTH,
   MAX_TEMPLATES,

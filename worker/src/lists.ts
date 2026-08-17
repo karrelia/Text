@@ -12,6 +12,9 @@
  */
 
 import type { Env } from "./env";
+import { listKeyboard } from "./keyboards";
+import type { TelegramClient } from "./telegram";
+import * as texts from "./texts";
 import { OpenRouterError, complete, stripWrapper } from "./openrouter";
 import { buildListPrompt } from "./prompts";
 import type { UserSettings } from "./settings";
@@ -279,3 +282,33 @@ export async function listNames(env: Env, userId: number): Promise<string[]> {
 
   return [...names].sort();
 }
+
+/**
+ * Показує список із кнопками. Живе тут, а не в сценаріях: викликають його
+ * і команда /list, і розбір сказаного, а через сценарії це замкнуло б
+ * імпорти в коло.
+ */
+export async function showList(
+  env: Env,
+  tg: TelegramClient,
+  chatId: number,
+  userId: number,
+  list: string,
+  prefix = "",
+): Promise<void> {
+  const items = await loadList(env, userId, list);
+  if (items.length === 0) {
+    await tg.sendMessage(chatId, prefix + texts.LIST_EMPTY(list), { html: true });
+    return;
+  }
+
+  await tg.sendMessage(
+    chatId,
+    prefix + texts.renderList(listTitle(list), items.map((item) => item.text)),
+    {
+      html: true,
+      keyboard: listKeyboard(items.map((item) => itemTail(item.key))),
+    },
+  );
+}
+

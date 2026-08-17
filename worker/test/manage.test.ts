@@ -18,7 +18,7 @@ vi.mock("../src/openrouter", async (importOriginal) => ({
   complete,
 }));
 
-const { maybeRemind } = await import("../src/pipeline");
+const { handleSpoken } = await import("../src/pipeline");
 
 class FakeKV {
   readonly data = new Map<string, string>();
@@ -86,7 +86,7 @@ beforeEach(() => {
 
 const user = { llmModel: "google/gemini-2.5-flash" } as never;
 
-const говорить = (text: string) => maybeRemind(env, tg.client as never, CHAT, USER, text);
+const говорить = (text: string) => handleSpoken(env, tg.client as never, CHAT, USER, text);
 
 // Найнебезпечніше місце: сплутати «прибери нагадування» зі створенням
 // нагадування «прибрати». Ціна помилки — знищений запис.

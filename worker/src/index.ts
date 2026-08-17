@@ -14,7 +14,7 @@ import {
   handleAudioMessage,
   handleLongText,
   handlePhotoMessage,
-  maybeRemind,
+  handleSpoken,
   rerun,
 } from "./pipeline";
 import { READ_THRESHOLD } from "./reading";
@@ -235,8 +235,9 @@ export async function handleUpdate(env: Env, update: TgUpdate): Promise<void> {
       return;
     }
 
-    // Написане від руки теж може бути проханням нагадати — без команди.
-    if (await maybeRemind(env, tg, message.chat.id, userId, message.text)) return;
+    // Написане від руки теж може бути звертанням: нагадування, список
+    // або команда — усе без слеша.
+    if (await handleSpoken(env, tg, message.chat.id, userId, message.text)) return;
 
     // Довгий текст пересилають не просто так: людина хоче знати, про що це.
     if (message.text.trim().length >= READ_THRESHOLD) {

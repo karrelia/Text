@@ -29,7 +29,7 @@ vi.mock("../src/settings", async (importOriginal) => {
   };
 });
 
-const { maybeRemind } = await import("../src/pipeline");
+const { handleSpoken } = await import("../src/pipeline");
 
 function fakeTelegram() {
   const sent: string[] = [];
@@ -55,7 +55,7 @@ describe("нагадування без команди", () => {
     createReminder.mockRejectedValue(new ReminderError("не бачу часу"));
     const tg = fakeTelegram();
 
-    const handled = await maybeRemind(
+    const handled = await handleSpoken(
       env,
       tg.client as never,
       555,
@@ -72,7 +72,7 @@ describe("нагадування без команди", () => {
     createReminder.mockRejectedValue(new ReminderError("не бачу часу"));
     const tg = fakeTelegram();
 
-    const handled = await maybeRemind(
+    const handled = await handleSpoken(
       env,
       tg.client as never,
       555,
@@ -87,7 +87,7 @@ describe("нагадування без команди", () => {
   it("звичайний текст навіть не доходить до розбору", async () => {
     const tg = fakeTelegram();
 
-    const handled = await maybeRemind(
+    const handled = await handleSpoken(
       env,
       tg.client as never,
       555,
@@ -109,7 +109,7 @@ describe("нагадування без команди", () => {
     });
     const tg = fakeTelegram();
 
-    const handled = await maybeRemind(
+    const handled = await handleSpoken(
       env,
       tg.client as never,
       555,

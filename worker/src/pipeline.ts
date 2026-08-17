@@ -9,13 +9,20 @@ import {
   clearList,
   itemTail,
   listNames,
-  listTitle,
   loadList,
   mentionsList,
   planList,
   removeItems,
+  showList,
 } from "./lists";
 import { looksLikeReceipt } from "./expenses";
+import {
+  type PlannedCommand,
+  VoiceCommandError,
+  commandIntent,
+  planCommand,
+} from "./voice";
+import { handleCommand } from "./handlers/commands";
 import { digest } from "./reading";
 import {
   listKeyboard,
@@ -205,7 +212,7 @@ export async function runVoice(
   // У протоколі кнопка збирає всі доручення разом, тож звичайний розбір
   // однієї фрази тут лише заважав би: слово «нагадати» посеред наради
   // створило б випадкове нагадування замість справжніх завдань.
-  if (!minutes) await maybeRemind(env, tg, chatId, userId, spoken);
+  if (!minutes) await handleSpoken(env, tg, chatId, userId, spoken);
 }
 
 // ── Довгий текст ─────────────────────────────────────────────────────────────
@@ -491,34 +498,47 @@ export async function rerun(
 // ── Нагадування без команди ──────────────────────────────────────────────────
 
 /**
- * Створює нагадування, якщо сказане на нього схоже.
+ * Що робити зі сказаним, окрім як показати його текстом.
  *
- * Про невдачу мовчимо лише тоді, коли намір був слабкий: людина надиктувала
- * нотатку, у якій просто трапилось слово «нагадування». Якщо ж прохання було
- * прямим («нагадай…», «додай нагадування…»), мовчання — найгірша відповідь:
- * людина чекає, а нічого не сталося й незрозуміло чому.
+ * Розбирає, чи є в записі звертання до бота, і веде його в потрібну гілку:
+ * списки, нагадування (створити чи змінити) або решта команд. Усі три
+ * перевірки — за словами, без моделі: вони йдуть на кожному записі, а
+ * зайвий виклик LLM коштував би грошей і секунди затримки щоразу.
+ *
+ * Про невдачу з нагадуванням мовчимо лише тоді, коли намір був слабкий:
+ * людина надиктувала нотатку, у якій просто трапилось слово «нагадування».
+ * Якщо ж прохання було прямим, мовчання — найгірша відповідь: людина чекає,
+ * а нічого не сталося й незрозуміло чому.
  */
-export async function maybeRemind(
+export async function handleSpoken(
   env: Env,
   tg: TelegramClient,
   chatId: number,
   userId: number,
   text: string,
 ): Promise<boolean> {
-  if (mentionsList(text)) {
-    const user = await loadSettings(env, userId);
-    if (user.autoRemind) return await handleList(env, tg, chatId, userId, text, user);
-  }
-
   const manage = manageIntent(text);
   const intent = manage === "none" ? reminderIntent(text) : "none";
-  if (manage === "none" && intent === "none") return false;
+  const listed = mentionsList(text);
+  // Команди перевіряємо останніми: у списків і нагадувань свої, дешевші й
+  // докладніші гілки, і «додай нагадування» не має потрапити в загальний
+  // розбір лише тому, що містить «додай».
+  const command =
+    listed || manage !== "none" || intent !== "none" ? null : commandIntent(text);
+
+  if (!listed && manage === "none" && intent === "none" && !command) return false;
 
   const user = await loadSettings(env, userId);
-  // Один вимикач на все, що бот робить із нагадуваннями без команди:
-  // і створення, і зміну. Інакше «без команди» означало б різне для
-  // двох сусідніх дій.
+
+  // Команди голосом вимикачем нагадувань не керуються: /autoremind про
+  // нагадування, а не про те, чи слухати бота взагалі.
+  if (command) return await runVoiceCommand(env, tg, chatId, userId, text, user);
+
+  // Один вимикач на все, що бот робить із нагадуваннями та списками без
+  // команди. Інакше «без команди» означало б різне для сусідніх дій.
   if (!user.autoRemind) return false;
+
+  if (listed) return await handleList(env, tg, chatId, userId, text, user);
 
   if (manage !== "none") {
     return await manageByVoice(env, tg, chatId, userId, text, manage, user);
@@ -613,28 +633,46 @@ export async function handleList(
   }
 }
 
-export async function showList(
+/**
+ * Виконує надиктовану команду: «додай в довідник Кірпосенко».
+ *
+ * Модель лише перекладає сказане на команду з переліку — далі працює той
+ * самий обробник, що й для набраної руками. Так голос не заводить другої
+ * реалізації кожної команди, яку довелося б підтримувати окремо.
+ */
+async function runVoiceCommand(
   env: Env,
   tg: TelegramClient,
   chatId: number,
   userId: number,
-  list: string,
-  prefix = "",
-): Promise<void> {
-  const items = await loadList(env, userId, list);
-  if (items.length === 0) {
-    await tg.sendMessage(chatId, prefix + texts.LIST_EMPTY(list), { html: true });
-    return;
+  text: string,
+  user: UserSettings,
+): Promise<boolean> {
+  let planned: PlannedCommand;
+  try {
+    planned = await planCommand(env, user, text);
+  } catch (error) {
+    if (error instanceof VoiceCommandError) {
+      await tg.sendMessage(chatId, texts.VOICE_COMMAND_FAILED(error.message), {
+        html: true,
+      });
+      return true;
+    }
+    throw error;
   }
 
-  await tg.sendMessage(
-    chatId,
-    prefix + texts.renderList(listTitle(list), items.map((item) => item.text)),
-    {
-      html: true,
-      keyboard: listKeyboard(items.map((item) => itemTail(item.key))),
-    },
+  await tg.sendMessage(chatId, texts.VOICE_COMMAND_RUNNING(planned.command, planned.args), {
+    html: true,
+  });
+  await handleCommand(
+    env,
+    tg,
+    { message_id: 0, chat: { id: chatId } },
+    userId,
+    planned.command,
+    planned.args,
   );
+  return true;
 }
 
 /**
